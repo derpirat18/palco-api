@@ -85,6 +85,10 @@ apartados en vuelo, pero la doble venta sigue siendo imposible.
 Las llaves de Redis llevan hash tag: `hold:{func:<id>}:<seat_id>`. Sin
 él, los scripts Lua multi-llave fallan en Redis Cluster.
 
+Una selección no puede dejar una butaca libre sola en su fila
+(`app/services/sueltas.py`, ADR 0008). La vecindad sale de la posición
+`x` en el mapa, nunca del número de butaca: la luneta va en nones y pares.
+
 ## Autorización
 
 Tres roles: `admin_psd` ve todo, `organizador` ve solo su propio cliente,

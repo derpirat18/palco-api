@@ -21,6 +21,7 @@ from sqlalchemy import func, select, update
 from app.core.config import settings
 from app.core.errors import (
     AsientoNoDisponible,
+    DejaButacaSuelta,
     FuncionNoALaVenta,
     LimiteDeAsientos,
     RecursoNoEncontrado,
@@ -222,6 +223,65 @@ async def test_tope_por_apartado_no_por_peticion(db, clientes, hold_service):
         await servicio.apartar(pid, [seats[tope]], hold)
 
     assert (await fila(db, pid, seats[tope])).estado == "disponible"
+
+
+# --------------------------------------------------------------------------
+# Butacas sueltas (la logica completa esta en test_sueltas.py)
+# --------------------------------------------------------------------------
+
+
+async def test_no_se_aparta_si_deja_una_butaca_sola(
+    db, clientes, hold_service, redis_test
+):
+    """Luneta fila A: apartar solo la A2 deja la A1 sola en la orilla."""
+    esc = await funcion_a_la_venta(db, clientes[0].id)
+    pid, (a1, a2) = esc["performance_id"], esc["seat_ids"][:2]
+
+    with pytest.raises(DejaButacaSuelta) as exc:
+        await ApartadoService(db, hold_service).apartar(pid, [a2], nuevo_hold())
+
+    assert exc.value.detalle["seat_id"] == a1
+    assert await redis_test.keys("hold:*") == [], "no debio llegar a Redis"
+    assert (await fila(db, pid, a2)).estado == "disponible"
+
+
+async def test_agregar_al_carrito_se_evalua_completo(db, clientes, hold_service):
+    """Ya tenia la A1; agregar la A3 deja la A2 sola entre las suyas."""
+    esc = await funcion_a_la_venta(db, clientes[0].id)
+    pid, (a1, a2, a3) = esc["performance_id"], esc["seat_ids"][:3]
+    hold = nuevo_hold()
+    servicio = ApartadoService(db, hold_service)
+    await servicio.apartar(pid, [a1], hold)
+
+    with pytest.raises(DejaButacaSuelta) as exc:
+        await servicio.apartar(pid, [a3], hold)
+    assert exc.value.detalle["seat_id"] == a2
+
+    await servicio.apartar(pid, [a2, a3], hold)
+
+
+async def test_la_butaca_suelta_inevitable_se_permite(db, clientes, hold_service):
+    """Quedan A2, A3 y A4 libres y se piden dos: alguna queda sola."""
+    esc = await funcion_a_la_venta(db, clientes[0].id)
+    pid, luneta = esc["performance_id"], esc["seat_ids"][:5]
+    await poner_estado(db, pid, luneta[0], "bloqueado")
+    await poner_estado(db, pid, luneta[4], "vendido")
+
+    await ApartadoService(db, hold_service).apartar(pid, luneta[1:3], nuevo_hold())
+
+
+async def test_api_avisa_que_butaca_quedaria_sola(api, db, clientes):
+    esc = await funcion_a_la_venta(db, clientes[0].id)
+    a1, a2 = esc["seat_ids"][:2]
+
+    r = await api.post(
+        f"{API}/performances/{esc['performance_id']}/apartados",
+        json={"hold_id": str(uuid.uuid4()), "seat_ids": [a2]},
+    )
+
+    assert r.status_code == 409
+    assert r.json()["error"]["codigo"] == "deja_butaca_suelta"
+    assert r.json()["error"]["detalle"]["seat_id"] == a1
 
 
 # --------------------------------------------------------------------------

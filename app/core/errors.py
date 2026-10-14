@@ -53,3 +53,10 @@ class FuncionNoALaVenta(ErrorDeDominio):
 
     codigo = "funcion_no_a_la_venta"
     http_status = 409
+
+
+class DejaButacaSuelta(ErrorDeDominio):
+    """La seleccion dejaria una butaca libre sola en su fila."""
+
+    codigo = "deja_butaca_suelta"
+    http_status = 409

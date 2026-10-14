@@ -32,22 +32,24 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import and_, func, insert, or_, select, update
+from sqlalchemy import and_, func, insert, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import (
     FUNCION_NO_EXISTE,
     AsientoNoDisponible,
+    DejaButacaSuelta,
     FuncionNoALaVenta,
     LimiteDeAsientos,
     RecursoNoEncontrado,
 )
 from app.models.base import EstadoAsiento
-from app.models.catalog import Client, Event, Performance
+from app.models.catalog import Client, Event, Performance, Seat
 from app.models.inventory import InventoryMove, PerformanceSeat
 from app.services.holds import HoldService
 from app.services.inventory import ConflictoDeInventario
+from app.services.sueltas import Lugar, butaca_suelta
 from app.services.venta import motivo_no_se_vende, visible_al_publico
 
 # Cuanto antes que Redis vence el apartado en Postgres. Cubre la latencia
@@ -56,6 +58,27 @@ MARGEN_ESPEJO_SEGUNDOS = 5
 
 APARTADO = EstadoAsiento.APARTADO.value
 DISPONIBLE = EstadoAsiento.DISPONIBLE.value
+
+
+def _libre_para(
+    estado: str,
+    dueno: str | None,
+    expira: datetime | None,
+    hold_id: str,
+    ahora: datetime,
+) -> bool:
+    """Si esta persona puede quedarse con la butaca.
+
+    Disponible, apartada por ella misma, o apartada por alguien mas pero
+    ya vencida en Postgres. Es la misma condicion que repite el `UPDATE`.
+    """
+    if estado == DISPONIBLE:
+        return True
+    if estado == APARTADO:
+        if dueno == hold_id:
+            return True
+        return expira is not None and expira <= ahora
+    return False
 
 
 @dataclass(frozen=True)
@@ -122,6 +145,16 @@ class ApartadoService:
                 )
 
         await self._verificar_tope(performance_id, seat_ids, hold_id, ahora)
+
+        suelta = await self._butaca_que_quedaria_suelta(
+            performance_id, seat_ids, hold_id, ahora
+        )
+        if suelta is not None:
+            raise DejaButacaSuelta(
+                "Esa seleccion deja una butaca sola. Elige butacas juntas o "
+                "deja al menos dos libres al lado.",
+                {"seat_id": suelta, "performance_id": performance_id},
+            )
 
         # Las que ya eran suyas antes de esta peticion. Si algo falla
         # despues de Redis, solo se sueltan las demas: un error al agregar
@@ -286,13 +319,62 @@ class ApartadoService:
 
     @staticmethod
     def _apartable(fila: PerformanceSeat, hold_id: str, ahora: datetime) -> bool:
-        if fila.estado == DISPONIBLE:
-            return True
-        if fila.estado == APARTADO:
-            if fila.hold_id == hold_id:
-                return True
-            return fila.hold_expira_en is not None and fila.hold_expira_en <= ahora
-        return False
+        return _libre_para(
+            fila.estado, fila.hold_id, fila.hold_expira_en, hold_id, ahora
+        )
+
+    async def _butaca_que_quedaria_suelta(
+        self,
+        performance_id: int,
+        seat_ids: list[int],
+        hold_id: str,
+        ahora: datetime,
+    ) -> int | None:
+        """Aplica la regla de butacas sueltas a las filas que toca la compra.
+
+        Lo que esta persona ya tenia apartado cuenta como parte de su
+        seleccion: agregar una butaca a su carrito se evalua completo.
+        """
+        filas_tocadas = (
+            await self.db.execute(
+                select(Seat.zone_id, Seat.fila).where(Seat.id.in_(seat_ids)).distinct()
+            )
+        ).all()
+        filas = (
+            await self.db.execute(
+                select(
+                    PerformanceSeat.seat_id,
+                    PerformanceSeat.estado,
+                    PerformanceSeat.hold_id,
+                    PerformanceSeat.hold_expira_en,
+                    Seat.zone_id,
+                    Seat.fila,
+                    Seat.pos_x,
+                )
+                .join(Seat, Seat.id == PerformanceSeat.seat_id)
+                .where(
+                    PerformanceSeat.performance_id == performance_id,
+                    tuple_(Seat.zone_id, Seat.fila).in_(filas_tocadas),
+                )
+            )
+        ).all()
+
+        lugares = [
+            Lugar(
+                seat_id=seat_id,
+                zona_id=zona_id,
+                fila=fila,
+                x=x,
+                libre=_libre_para(estado, dueno, expira, hold_id, ahora),
+            )
+            for seat_id, estado, dueno, expira, zona_id, fila, x in filas
+        ]
+        ya_suyas = {
+            seat_id
+            for seat_id, estado, dueno, *_ in filas
+            if estado == APARTADO and dueno == hold_id
+        }
+        return butaca_suelta(lugares, set(seat_ids) | ya_suyas)
 
     async def _verificar_tope(
         self,
