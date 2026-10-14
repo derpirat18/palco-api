@@ -263,6 +263,23 @@ async def test_evento_en_borrador_no_existe_para_el_comprador(
         )
 
 
+async def test_organizador_dado_de_baja_no_vende(
+    db, clientes, hold_service, redis_test
+):
+    """Si PSD da de baja al organizador, sus eventos dejan de existir para el
+    publico: no se aparta nada, aunque la funcion siga en venta."""
+    esc = await funcion_a_la_venta(db, clientes[0].id)
+    cliente = await db.get(Client, clientes[0].id)
+    cliente.activo = False
+    await db.flush()
+
+    with pytest.raises(RecursoNoEncontrado):
+        await ApartadoService(db, hold_service).apartar(
+            esc["performance_id"], esc["seat_ids"][:1], nuevo_hold()
+        )
+    assert await redis_test.keys("hold:*") == []
+
+
 async def test_venta_cerrada_por_fecha(db, clientes, hold_service):
     esc = await funcion_a_la_venta(db, clientes[0].id)
     funcion = await db.get(Performance, esc["performance_id"])

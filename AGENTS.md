@@ -57,6 +57,8 @@ revisan con lupa:
 
 - `app/services/holds.py` y `app/services/lua/*.lua`
 - `app/services/apartados.py`: Postgres alrededor de Redis (ADR 0007)
+- `app/services/venta.py`: cuándo una función se vende y cuánto cuesta con
+  cargos. La usan la página pública, el apartado y el cobro
 - `app/models/inventory.py`
 - Cualquier cosa que toque cobros o emisión de boletos
 
@@ -109,6 +111,18 @@ Distinguirlos permite descubrir qué clientes hay sondeando identificadores.
 Cada endpoint nuevo con un identificador lleva su prueba con
 `igual_que_inexistente`. El 403 queda solo para rol insuficiente, que no
 revela nada del recurso.
+
+## Lo público
+
+`/api/v1/publico/...` no pide sesión: todo lo que devuelve sale a
+internet. Nunca exponer el cliente, la comisión de PSD, conteos de
+butacas ni identificadores internos del organizador. Cada esquema
+público tiene una prueba que fija la lista exacta de campos; agregar uno
+es una decisión, no un descuido.
+
+Un evento en borrador o de un organizador dado de baja responde igual
+que uno inexistente (`visible_al_publico`), y la página y el apartado
+deciden "se vende o no" con la misma función (`motivo_no_se_vende`).
 
 ## Flujo de compra
 

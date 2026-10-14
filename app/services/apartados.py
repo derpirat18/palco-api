@@ -43,11 +43,12 @@ from app.core.errors import (
     LimiteDeAsientos,
     RecursoNoEncontrado,
 )
-from app.models.base import EstadoAsiento, EstadoEvento, EstadoFuncion
-from app.models.catalog import Event, Performance
+from app.models.base import EstadoAsiento
+from app.models.catalog import Client, Event, Performance
 from app.models.inventory import InventoryMove, PerformanceSeat
 from app.services.holds import HoldService
 from app.services.inventory import ConflictoDeInventario
+from app.services.venta import motivo_no_se_vende, visible_al_publico
 
 # Cuanto antes que Redis vence el apartado en Postgres. Cubre la latencia
 # entre el SET en Redis y el UPDATE en Postgres, y el reloj de cada uno.
@@ -264,56 +265,24 @@ class ApartadoService:
     async def _funcion_a_la_venta(self, performance_id: int, ahora: datetime) -> None:
         fila = (
             await self.db.execute(
-                select(Performance, Event.estado)
+                select(Performance, Event, Client)
                 .join(Event, Event.id == Performance.event_id)
+                .join(Client, Client.id == Event.client_id)
                 .where(Performance.id == performance_id)
             )
         ).first()
 
-        # Un evento en borrador no existe para el publico: mismo error que
-        # una funcion inexistente, para no anunciar lo que no se ha lanzado.
-        if fila is None or fila[1] != EstadoEvento.PUBLICADO.value:
+        # Borrador u organizador dado de baja: no existe para el publico.
+        # Mismo error que una funcion inexistente.
+        if fila is None or not visible_al_publico(fila[1], fila[2]):
             raise RecursoNoEncontrado(FUNCION_NO_EXISTE)
 
-        funcion: Performance = fila[0]
-        motivo = self._por_que_no_se_vende(funcion, ahora)
+        motivo = motivo_no_se_vende(fila[0], ahora)
         if motivo is not None:
             mensaje, detalle = motivo
             raise FuncionNoALaVenta(
                 mensaje, {"performance_id": performance_id, **detalle}
             )
-
-    @staticmethod
-    def _por_que_no_se_vende(
-        funcion: Performance, ahora: datetime
-    ) -> tuple[str, dict] | None:
-        """La primera regla de venta que no se cumple, o None.
-
-        El motivo va en la respuesta porque le sirve al comprador ("la
-        venta abre el 1 de noviembre") y a quien opera la funcion. No
-        revela nada: el evento ya es publico.
-        """
-        if funcion.estado != EstadoFuncion.EN_VENTA.value:
-            return (
-                "Esta funcion no esta a la venta.",
-                {"motivo": "estado", "estado": funcion.estado},
-            )
-        if not funcion.inventario_generado:
-            return "Esta funcion todavia no tiene inventario.", {
-                "motivo": "sin_inventario"
-            }
-        if funcion.venta_abre_en is not None and ahora < funcion.venta_abre_en:
-            return "La venta de esta funcion todavia no abre.", {
-                "motivo": "aun_no_abre",
-                "abre_en": funcion.venta_abre_en.isoformat(),
-            }
-        cierra = funcion.venta_cierra_en or funcion.inicia_en
-        if ahora >= cierra:
-            return "La venta de esta funcion ya cerro.", {
-                "motivo": "venta_cerrada",
-                "cerro_en": cierra.isoformat(),
-            }
-        return None
 
     @staticmethod
     def _apartable(fila: PerformanceSeat, hold_id: str, ahora: datetime) -> bool:
