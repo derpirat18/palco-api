@@ -25,6 +25,7 @@ from app.models.inventory import InventoryMove, PerformanceSeat
 from app.models.payments import PaymentEvent
 from app.models.sales import (
     AccessDevice,
+    Consent,
     Customer,
     Order,
     OrderItem,
@@ -38,6 +39,7 @@ __all__ = [
     "AccessDevice",
     "Base",
     "Client",
+    "Consent",
     "Customer",
     "DiscountCode",
     "DiscountRedemption",

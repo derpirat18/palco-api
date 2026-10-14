@@ -110,6 +110,7 @@ async def test_no_sale_nada_del_organizador(cliente_http, db, clientes):
     cuerpo = (await pagina(cliente_http, await slug_de(db, esc["event_id"]))).json()
 
     assert set(cuerpo) == {
+        "uuid",
         "slug",
         "nombre",
         "categoria",
@@ -132,6 +133,7 @@ async def test_no_sale_nada_del_organizador(cliente_http, db, clientes):
     }
     assert set(cuerpo["funciones"][0]) == {
         "id",
+        "uuid",
         "inicia_en",
         "apertura_puertas",
         "estado_venta",

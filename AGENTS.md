@@ -152,9 +152,23 @@ días; cancelar una autorización es inmediato.
   cliente. Si mañana cambia una comisión, el histórico no se mueve.
 - **Enumeraciones**: texto con `CHECK`, no tipo `ENUM` de Postgres.
   Agregar un valor a un ENUM nativo bloquea la tabla.
-- **Identificadores**: `BIGINT` autoincremental.
+- **Identificadores**: `BIGINT` autoincremental por dentro, `uuid` hacia
+  fuera. `clients`, `events`, `performances`, `customers`, `orders` y
+  `tickets` llevan `UUIDPublicoMixin`. Todo lo que sale de Palco y se
+  guarda en otro sistema (CRM, webhooks, QR, links que se comparten)
+  usa el `uuid`, nunca el `id`. El `uuid` no cambia jamás, ni en una baja.
 - **Un correo, un `customer`.** Normalizado en minúsculas. Quien compra
   como invitado hoy y crea cuenta mañana conserva su historial.
+- **Teléfonos en E.164** (`+525512345678`). Todo teléfono que entra pasa
+  por `app/core/telefonos.normalizar_telefono` antes de guardarse; la
+  base lo exige con `ck_customers_telefono_e164`. Un número inválido se
+  rechaza (`422 telefono_invalido`), no se guarda "como venga".
+- **Consentimientos: bitácora, no casilla.** No hay columna
+  `acepta_marketing`. Cada aceptación o retiro es un registro nuevo en
+  `consents` (finalidad, origen, versión del aviso, fecha) vía
+  `ConsentimientoService`. Nunca se edita ni se borra uno: lo vigente es
+  el más reciente por finalidad. `operacion` y `marketing` se piden por
+  separado, nunca con una sola casilla. Ver ADR 0009.
 
 ## Migraciones
 
@@ -166,6 +180,11 @@ make migrar                            # aplica
 Nunca cambiar la base a mano. Siempre revisar el archivo generado antes
 de confirmarlo: el autogenerado se equivoca con índices parciales y
 tipos de columna.
+
+El autogenerado tampoco sabe de datos: si una columna se borra, se achica
+o cambia de significado, la migración rescata o convierte lo que ya hay
+antes, y falla con un mensaje claro si no puede (ejemplo:
+`20261014_1622_uuid_consentimientos_telefono.py`).
 
 ## Pruebas
 

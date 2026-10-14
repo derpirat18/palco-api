@@ -17,6 +17,7 @@ dependencies = [
     "passlib[bcrypt]>=1.7",
     "stripe>=11.0",
     "httpx>=0.28",
+    "phonenumbers>=8.13",
 ]
 
 [project.optional-dependencies]

@@ -3,6 +3,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -83,6 +84,7 @@ class EventoActualizar(BaseModel):
 
 class EventoResponse(BaseModel):
     id: int
+    uuid: UUID
     client_id: int
     venue_id: int
     nombre: str
@@ -106,6 +108,7 @@ class FuncionCrear(BaseModel):
 
 class FuncionResponse(BaseModel):
     id: int
+    uuid: UUID
     event_id: int
     seat_map_id: int
     inicia_en: datetime

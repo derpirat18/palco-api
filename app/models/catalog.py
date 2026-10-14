@@ -19,10 +19,17 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, EstadoEvento, EstadoFuncion, PKMixin, TimestampMixin
+from app.models.base import (
+    Base,
+    EstadoEvento,
+    EstadoFuncion,
+    PKMixin,
+    TimestampMixin,
+    UUIDPublicoMixin,
+)
 
 
-class Client(Base, PKMixin, TimestampMixin):
+class Client(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     """Organizador. Cliente de PSD que vende boletos en la plataforma."""
 
     __tablename__ = "clients"
@@ -159,7 +166,7 @@ class Seat(Base, PKMixin):
         return f"Fila {self.fila} · {self.numero}"
 
 
-class Event(Base, PKMixin, TimestampMixin):
+class Event(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     """Evento comercial: un espectaculo en una plaza."""
 
     __tablename__ = "events"
@@ -195,7 +202,7 @@ class Event(Base, PKMixin, TimestampMixin):
     )
 
 
-class Performance(Base, PKMixin, TimestampMixin):
+class Performance(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     """Funcion: una fecha y hora concreta de un evento."""
 
     __tablename__ = "performances"

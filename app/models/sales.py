@@ -25,10 +25,11 @@ from app.models.base import (
     EstadoTransferencia,
     PKMixin,
     TimestampMixin,
+    UUIDPublicoMixin,
 )
 
 
-class Customer(Base, PKMixin, TimestampMixin):
+class Customer(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     """Comprador.
 
     Un correo, un cliente. Si compra tres veces como invitado con el mismo
@@ -41,25 +42,74 @@ class Customer(Base, PKMixin, TimestampMixin):
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     nombre: Mapped[str | None] = mapped_column(String(120))
     apellidos: Mapped[str | None] = mapped_column(String(120))
-    telefono: Mapped[str | None] = mapped_column(String(40))
+    # Siempre en E.164 (+525512345678). Se normaliza al escribir con
+    # app.core.telefonos y la base lo exige con un CHECK.
+    telefono: Mapped[str | None] = mapped_column(String(16))
     # Nulo mientras sea invitado. En fase 2 se llena al activar cuenta.
     password_hash: Mapped[str | None] = mapped_column(String(255))
     email_verificado_en: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
     cuenta_activada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    acepta_marketing: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    # El consentimiento no vive aqui: un si/no no dice cuando, desde donde,
+    # para que ni con que aviso. Ver Consent.
 
     ordenes: Mapped[list["Order"]] = relationship(back_populates="comprador")
+
+    __table_args__ = (
+        CheckConstraint(
+            r"telefono IS NULL OR telefono ~ '^\+[1-9][0-9]{7,14}$'",
+            name="telefono_e164",
+        ),
+    )
 
     @property
     def es_invitado(self) -> bool:
         return self.cuenta_activada_en is None
 
 
-class Order(Base, PKMixin, TimestampMixin):
+class Consent(Base, PKMixin):
+    """Un consentimiento dado o retirado, con todo lo que lo prueba.
+
+    Es una bitacora: solo se inserta. El estado vigente de cada finalidad
+    es el registro mas reciente. Si alguien reclama, lo que preguntan es
+    cuando acepto, desde donde, para que y que texto leyo; con un booleano
+    no hay respuesta, y no se puede reconstruir despues.
+
+    Cada finalidad es un registro aparte. Operar la reserva y recibir
+    promociones son consentimientos distintos: juntarlos invalida el de
+    marketing (ADR 0005).
+    """
+
+    __tablename__ = "consents"
+
+    customer_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False
+    )
+    finalidad: Mapped[str] = mapped_column(String(20), nullable=False)
+    # True: lo otorga. False: lo retira. Retirar tambien se registra.
+    otorgado: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Desde donde: checkout_web, formulario_pista, taquilla, panel...
+    origen: Mapped[str] = mapped_column(String(40), nullable=False)
+    # Version del aviso de privacidad que se mostro, p. ej. "2026-10".
+    aviso_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Orden en la que se dio, si fue al comprar.
+    order_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("orders.id", ondelete="SET NULL")
+    )
+    registrado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "finalidad IN ('operacion','marketing')", name="finalidad_valida"
+        ),
+        Index("ix_consents_vigente", "customer_id", "finalidad", "registrado_en"),
+    )
+
+
+class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     """Orden de compra. Siempre pertenece a una sola funcion."""
 
     __tablename__ = "orders"
@@ -180,7 +230,7 @@ class OrderItem(Base, PKMixin):
     )
 
 
-class Ticket(Base, PKMixin):
+class Ticket(Base, PKMixin, UUIDPublicoMixin):
     """Boleto emitido. Uno por partida.
 
     Esta separado de la partida para que pueda transferirse sin tocar la

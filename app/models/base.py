@@ -2,8 +2,10 @@
 
 import enum
 from datetime import datetime
+from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, DateTime, MetaData, func
+from sqlalchemy import BigInteger, DateTime, MetaData, func, text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Convencion de nombres para que Alembic genere migraciones estables.
@@ -24,6 +26,27 @@ class Base(DeclarativeBase):
 
 class PKMixin:
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+
+class UUIDPublicoMixin:
+    """Identificador para todo lo que sale del sistema.
+
+    El `id` BIGINT es consecutivo: perfecto hacia adentro, veneno hacia
+    afuera. "Comprador 47" amarra a quien lo guarde (un CRM, un reporte, un
+    link) a la secuencia de esta base; no sobrevive a una migracion, choca
+    con el 47 de cualquier otro sistema y deja adivinar cuantos hay.
+
+    Hacia afuera se usa este UUID. Lo genera Postgres si la fila llega sin
+    el, y Python antes del flush para que el objeto lo tenga desde que nace.
+    """
+
+    uuid: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        nullable=False,
+        unique=True,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
 
 
 class TimestampMixin:

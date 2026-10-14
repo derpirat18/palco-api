@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +47,7 @@ class RecintoPublico:
 @dataclass(frozen=True)
 class FuncionPublica:
     id: int
+    uuid: UUID
     inicia_en: datetime
     apertura_puertas: datetime | None
     # en_venta | proximamente | agotada | venta_cerrada
@@ -72,6 +74,7 @@ class MedicionPublica:
 
 @dataclass(frozen=True)
 class EventoPublico:
+    uuid: UUID
     slug: str
     nombre: str
     categoria: str | None
@@ -128,6 +131,7 @@ class PublicoService:
         precio_de_zona = await self._precio_minimo_de_zona(ids)
 
         return EventoPublico(
+            uuid=evento.uuid,
             slug=evento.slug,
             nombre=evento.nombre,
             categoria=evento.categoria,
@@ -194,6 +198,7 @@ class PublicoService:
 
         return FuncionPublica(
             id=funcion.id,
+            uuid=funcion.uuid,
             inicia_en=funcion.inicia_en,
             apertura_puertas=funcion.apertura_puertas,
             estado_venta=estado_venta,

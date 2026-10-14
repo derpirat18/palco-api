@@ -7,6 +7,7 @@ preguntarse si el organizador querria que su competencia lo viera.
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -38,6 +39,7 @@ class MedicionResponse(BaseModel):
 
 class FuncionPublicaResponse(BaseModel):
     id: int
+    uuid: UUID
     inicia_en: datetime
     apertura_puertas: datetime | None
     estado_venta: Literal["en_venta", "proximamente", "agotada", "venta_cerrada"]
@@ -51,6 +53,7 @@ class FuncionPublicaResponse(BaseModel):
 
 
 class EventoPublicoResponse(BaseModel):
+    uuid: UUID
     slug: str
     nombre: str
     categoria: str | None

@@ -7,6 +7,7 @@ para poder leerlas, pero quien las edita se decide en el router.
 import re
 from decimal import Decimal
 from typing import Annotated
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -119,6 +120,7 @@ class ClienteActualizar(_NormalizaIdentificadores):
 
 class ClienteResponse(BaseModel):
     id: int
+    uuid: UUID
     nombre: str
     razon_social: str | None
     rfc: str | None
