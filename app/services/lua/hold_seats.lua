@@ -11,16 +11,22 @@
 -- ARGV[1]: hold_id del solicitante
 -- ARGV[2]: TTL en segundos
 --
--- Devuelve 0 si aparto todas, o el indice (base 1) de la primera ocupada.
+-- Devuelve 0 si aparto todas, o el indice (base 1) de la primera que
+-- tiene OTRO dueño. Las que ya son de este hold_id no cuentan como
+-- ocupadas: asi un reintento (doble clic, red que se corta) no le dice
+-- al comprador que alguien mas aparto su propia butaca.
 
 for i = 1, #KEYS do
-  if redis.call('GET', KEYS[i]) then
+  local dueno = redis.call('GET', KEYS[i])
+  if dueno and dueno ~= ARGV[1] then
     return i
   end
 end
 
+-- NX: solo escribe las butacas libres. Las que ya eran suyas conservan
+-- su vencimiento original; un reintento no regala tiempo extra.
 for i = 1, #KEYS do
-  redis.call('SET', KEYS[i], ARGV[1], 'EX', ARGV[2])
+  redis.call('SET', KEYS[i], ARGV[1], 'EX', ARGV[2], 'NX')
 end
 
 return 0

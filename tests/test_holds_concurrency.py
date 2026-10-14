@@ -154,3 +154,33 @@ async def test_grupos_concurrentes_no_se_solapan(hold_service: HoldService):
     assert len(ganadores) == 2
     tomadas = [s for g in ganadores for s in g.seat_ids]
     assert len(tomadas) == len(set(tomadas)), "Una butaca quedo en dos apartados."
+
+
+async def test_reintento_del_mismo_comprador_no_falla(hold_service: HoldService):
+    """Doble clic o reintento de red: el comprador ya tiene esas butacas."""
+    await hold_service.apartar(FUNCION, [90, 91], hold_id="carrito-1")
+    otra_vez = await hold_service.apartar(FUNCION, [90, 91], hold_id="carrito-1")
+
+    assert otra_vez.hold_id == "carrito-1"
+    assert await hold_service.es_titular(FUNCION, [90, 91], "carrito-1")
+
+
+async def test_reintento_no_alarga_el_apartado(hold_service: HoldService):
+    """Reintentar no puede servir para acaparar butacas sin limite."""
+    await hold_service.apartar(FUNCION, [92], hold_id="carrito-2", ttl=5)
+    await hold_service.apartar(FUNCION, [92], hold_id="carrito-2", ttl=600)
+
+    assert await hold_service.ttl_restante(FUNCION, 92) <= 5
+
+
+async def test_reintento_no_toca_butacas_ajenas(hold_service: HoldService):
+    """Ser dueño de una butaca del grupo no da derecho a las demas."""
+    await hold_service.apartar(FUNCION, [93], hold_id="ajeno")
+    await hold_service.apartar(FUNCION, [94], hold_id="carrito-3")
+
+    with pytest.raises(AsientoNoDisponible) as exc:
+        await hold_service.apartar(FUNCION, [94, 93], hold_id="carrito-3")
+
+    assert exc.value.detalle["seat_id"] == 93
+    assert await hold_service.es_titular(FUNCION, [93], "ajeno")
+    assert await hold_service.es_titular(FUNCION, [94], "carrito-3")
