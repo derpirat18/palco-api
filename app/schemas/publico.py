@@ -29,6 +29,13 @@ class CargosResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MedicionResponse(BaseModel):
+    ga4_id: str | None
+    meta_pixel_id: str | None
+
+    model_config = {"from_attributes": True}
+
+
 class FuncionPublicaResponse(BaseModel):
     id: int
     inicia_en: datetime
@@ -51,6 +58,7 @@ class EventoPublicoResponse(BaseModel):
     imagen_url: str | None
     recinto: RecintoPublicoResponse
     cargos: CargosResponse
+    medicion: MedicionResponse
     funciones: list[FuncionPublicaResponse]
 
     model_config = {"from_attributes": True}

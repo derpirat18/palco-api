@@ -4,6 +4,7 @@ Las condiciones comerciales son de PSD, no del organizador: viven aqui
 para poder leerlas, pero quien las edita se decide en el router.
 """
 
+import re
 from decimal import Decimal
 from typing import Annotated
 
@@ -43,6 +44,36 @@ class _NormalizaIdentificadores(BaseModel):
         if len(clabe) != 18 or not clabe.isdigit():
             raise ValueError("La CLABE debe ser de 18 digitos.")
         return clabe
+
+    @field_validator("ga_id", check_fields=False)
+    @classmethod
+    def _ga4(cls, valor: str | None) -> str | None:
+        """ID de medicion de Google Analytics 4: G- y de 6 a 12 caracteres.
+
+        Un ID mal escrito no truena: simplemente no mide nada, y el
+        organizador se entera semanas despues, sin datos de su campaña.
+        Por eso se valida el formato al guardarlo. Vacio lo desconecta.
+        """
+        if valor is None or not valor.strip():
+            return None
+        ga = valor.strip().upper()
+        if not re.fullmatch(r"G-[A-Z0-9]{6,12}", ga):
+            raise ValueError(
+                "El ID de Google Analytics 4 empieza con G- (por ejemplo "
+                "G-7KQ2M4XW9P). Los IDs UA- son de la version anterior."
+            )
+        return ga
+
+    @field_validator("pixel_id", check_fields=False)
+    @classmethod
+    def _pixel(cls, valor: str | None) -> str | None:
+        """ID del pixel de Meta: 15 o 16 digitos. Vacio lo desconecta."""
+        if valor is None or not valor.strip():
+            return None
+        pixel = valor.strip()
+        if not re.fullmatch(r"\d{15,16}", pixel):
+            raise ValueError("El ID del pixel de Meta son 15 o 16 digitos.")
+        return pixel
 
     @field_validator("email", check_fields=False)
     @classmethod
@@ -98,6 +129,8 @@ class ClienteResponse(BaseModel):
     comision_pct: Decimal
     cargo_servicio_pct: Decimal
     cargo_orden: Decimal
+    ga_id: str | None
+    pixel_id: str | None
     activo: bool
 
     model_config = {"from_attributes": True}

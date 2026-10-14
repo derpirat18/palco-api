@@ -224,6 +224,67 @@ async def test_organizador_si_mantiene_sus_datos_de_contacto(
     assert r.json()["clabe"] == "002180045678901234"
 
 
+# --------------------------------------------------------------------------
+# Medicion: GA4 y Pixel de Meta
+# --------------------------------------------------------------------------
+
+
+async def editar_medicion(cliente_http, usuario, client_id: int, **campos):
+    return await cliente_http.patch(
+        f"{API}/clients/{client_id}", headers=auth(token_de(usuario)), json=campos
+    )
+
+
+async def test_organizador_conecta_su_medicion_y_la_ve(
+    cliente_http, usuarios, clientes
+):
+    cliente_a, _ = clientes
+    r = await editar_medicion(
+        cliente_http,
+        usuarios["org_a"],
+        cliente_a.id,
+        ga_id=" g-7kq2m4xw9p ",
+        pixel_id="1029384756102938",
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["ga_id"] == "G-7KQ2M4XW9P"
+    assert r.json()["pixel_id"] == "1029384756102938"
+
+
+@pytest.mark.parametrize(
+    "campo,valor",
+    [
+        ("ga_id", "UA-12345678-1"),  # Universal Analytics, ya no existe
+        ("ga_id", "G-12"),
+        ("ga_id", "GTM-ABC1234"),  # contenedor de Tag Manager, no GA4
+        ("pixel_id", "12345"),
+        ("pixel_id", "10293847561029x8"),
+    ],
+)
+async def test_un_id_mal_escrito_se_rechaza(
+    cliente_http, usuarios, clientes, campo, valor
+):
+    """Un ID mal escrito no truena: no mide nada, y nadie se entera."""
+    cliente_a, _ = clientes
+    r = await editar_medicion(
+        cliente_http, usuarios["org_a"], cliente_a.id, **{campo: valor}
+    )
+    assert r.status_code == 422, r.text
+
+
+async def test_vacio_desconecta_la_medicion(cliente_http, usuarios, clientes):
+    cliente_a, _ = clientes
+    await editar_medicion(
+        cliente_http, usuarios["org_a"], cliente_a.id, ga_id="G-7KQ2M4XW9P"
+    )
+
+    r = await editar_medicion(cliente_http, usuarios["org_a"], cliente_a.id, ga_id="")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["ga_id"] is None
+
+
 async def test_psd_si_edita_condiciones(cliente_http, usuarios, clientes):
     cliente_a, _ = clientes
     r = await cliente_http.patch(

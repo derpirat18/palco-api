@@ -117,8 +117,12 @@ async def test_no_sale_nada_del_organizador(cliente_http, db, clientes):
         "imagen_url",
         "recinto",
         "cargos",
+        "medicion",
         "funciones",
     }
+    # Los IDs de medicion si salen: el front los necesita para cargar GA4
+    # y el pixel, y cualquier pagina que los usa los deja en su codigo.
+    assert set(cuerpo["medicion"]) == {"ga4_id", "meta_pixel_id"}
     assert set(cuerpo["recinto"]) == {
         "nombre",
         "ciudad",
@@ -293,6 +297,34 @@ async def test_apartado_vigente_no_cuenta_como_libre_y_el_vencido_si(
         .values(hold_expira_en=ahora - timedelta(minutes=1))
     )
     assert (await una_funcion(cliente_http, slug))["precio_desde"] == "400.00"
+
+
+# --------------------------------------------------------------------------
+# Medicion
+# --------------------------------------------------------------------------
+
+
+async def test_la_pagina_lleva_la_medicion_del_organizador(cliente_http, db, clientes):
+    esc = await funcion_a_la_venta(db, clientes[0].id)
+    cliente = await db.get(Client, clientes[0].id)
+    cliente.ga_id = "G-7KQ2M4XW9P"
+    cliente.pixel_id = "1029384756102938"
+    await db.flush()
+
+    r = await pagina(cliente_http, await slug_de(db, esc["event_id"]))
+
+    assert r.json()["medicion"] == {
+        "ga4_id": "G-7KQ2M4XW9P",
+        "meta_pixel_id": "1029384756102938",
+    }
+
+
+async def test_sin_medicion_conectada_salen_vacios(cliente_http, db, clientes):
+    esc = await funcion_a_la_venta(db, clientes[0].id)
+
+    r = await pagina(cliente_http, await slug_de(db, esc["event_id"]))
+
+    assert r.json()["medicion"] == {"ga4_id": None, "meta_pixel_id": None}
 
 
 # --------------------------------------------------------------------------

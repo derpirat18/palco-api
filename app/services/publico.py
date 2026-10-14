@@ -58,6 +58,19 @@ class FuncionPublica:
 
 
 @dataclass(frozen=True)
+class MedicionPublica:
+    """IDs para que el front cargue la medicion del organizador.
+
+    Son publicos por naturaleza: cualquier pagina que los usa los deja en
+    su codigo fuente. Sin ellos el organizador no ve sus visitas ni sus
+    compras en su propio GA4 o en Meta.
+    """
+
+    ga4_id: str | None
+    meta_pixel_id: str | None
+
+
+@dataclass(frozen=True)
 class EventoPublico:
     slug: str
     nombre: str
@@ -66,6 +79,7 @@ class EventoPublico:
     imagen_url: str | None
     recinto: RecintoPublico
     cargos: Cargos
+    medicion: MedicionPublica
     funciones: tuple[FuncionPublica, ...]
 
 
@@ -127,6 +141,9 @@ class PublicoService:
                 zona_horaria=recinto.zona_horaria,
             ),
             cargos=cargos,
+            medicion=MedicionPublica(
+                ga4_id=cliente.ga_id, meta_pixel_id=cliente.pixel_id
+            ),
             funciones=tuple(
                 self._funcion_publica(
                     f, ahora, cargos, inventario.get(f.id), precio_de_zona.get(f.id)
