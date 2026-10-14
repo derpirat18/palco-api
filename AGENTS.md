@@ -94,16 +94,21 @@ compara roles ni `client_id` a mano.
 - `requiere_rol(...)` restringe por rol.
 - `alcance_cliente` da el `client_id` al que está limitado el usuario, o
   `None` si es admin. Las consultas filtran por ese valor.
-- `verificar_acceso_cliente(usuario, client_id)` se llama **después** de
-  cargar el recurso, con el `client_id` real del recurso. Confiar en un
-  parámetro de la petición dejaría leer datos ajenos cambiando un número
-  en la URL.
+- `verificar_acceso_cliente(usuario, client_id, no_encontrado=...)` se
+  llama **después** de cargar el recurso, con el `client_id` real del
+  recurso. Confiar en un parámetro de la petición dejaría leer datos
+  ajenos cambiando un número en la URL. `no_encontrado` es obligatorio:
+  es el mismo mensaje que da el servicio cuando el recurso no existe
+  (constantes en `app/core/errors.py`).
 
 El usuario se relee de la base en cada petición, no se confía solo en el
 token: así desactivar una cuenta la revoca al instante.
 
-Los mensajes de error no distinguen entre "no existe" y "no es tuyo".
+Lo ajeno responde **idéntico** a lo inexistente: mismo 404, mismo cuerpo.
 Distinguirlos permite descubrir qué clientes hay sondeando identificadores.
+Cada endpoint nuevo con un identificador lleva su prueba con
+`igual_que_inexistente`. El 403 queda solo para rol insuficiente, que no
+revela nada del recurso.
 
 ## Flujo de compra
 

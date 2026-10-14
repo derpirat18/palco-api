@@ -20,6 +20,19 @@ def auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+def igual_que_inexistente(ajeno, inexistente) -> None:
+    """Lo ajeno no se distingue de lo que no existe: ni codigo ni cuerpo.
+
+    Si se distinguiera, un organizador podria recorrer identificadores y
+    saber cuales existen y de quien son.
+    """
+    assert ajeno.status_code == 404, ajeno.text
+    assert (ajeno.status_code, ajeno.json()) == (
+        inexistente.status_code,
+        inexistente.json(),
+    )
+
+
 def token_de(usuario) -> str:
     return crear_access_token(
         subject=usuario.id, rol=usuario.rol, client_id=usuario.client_id
@@ -132,10 +145,11 @@ async def test_psd_ve_todos_el_organizador_solo_a_si_mismo(
 
 async def test_organizador_no_lee_a_otro(cliente_http, usuarios, clientes):
     _, cliente_b = clientes
-    r = await cliente_http.get(
-        f"{API}/clients/{cliente_b.id}", headers=auth(token_de(usuarios["org_a"]))
+    tk_a = auth(token_de(usuarios["org_a"]))
+    r = await cliente_http.get(f"{API}/clients/{cliente_b.id}", headers=tk_a)
+    igual_que_inexistente(
+        r, await cliente_http.get(f"{API}/clients/999999", headers=tk_a)
     )
-    assert r.status_code == 403
 
 
 async def test_inactivos_fuera_de_la_lista_por_omision(cliente_http, usuarios, db):
@@ -223,12 +237,14 @@ async def test_psd_si_edita_condiciones(cliente_http, usuarios, clientes):
 
 async def test_organizador_no_edita_a_otro(cliente_http, usuarios, clientes):
     _, cliente_b = clientes
+    tk_a = auth(token_de(usuarios["org_a"]))
+    cuerpo = {"telefono": "55-0000-0000"}
     r = await cliente_http.patch(
-        f"{API}/clients/{cliente_b.id}",
-        headers=auth(token_de(usuarios["org_a"])),
-        json={"telefono": "55-0000-0000"},
+        f"{API}/clients/{cliente_b.id}", headers=tk_a, json=cuerpo
     )
-    assert r.status_code == 403
+    igual_que_inexistente(
+        r, await cliente_http.patch(f"{API}/clients/999999", headers=tk_a, json=cuerpo)
+    )
 
 
 # --------------------------------------------------------------------------

@@ -6,7 +6,8 @@ que los roles se vuelvan mas finos.
 
 El aislamiento entre organizadores es la garantia critica de este
 modulo: un organizador jamas puede leer ni tocar datos de otro cliente.
-Esta cubierto por tests/test_auth_aislamiento.py.
+Esta cubierto por tests/test_auth.py y por las pruebas de cada router
+que comparan la respuesta a un recurso ajeno con la de uno inexistente.
 """
 
 from collections.abc import Callable
@@ -18,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
+from app.core.errors import RecursoNoEncontrado
 from app.core.security import PermisoInsuficiente, TokenInvalido, decodificar_token
 from app.models.base import RolUsuario
 from app.models.users import User
@@ -97,18 +99,24 @@ async def alcance_cliente(usuario: UsuarioActual) -> int | None:
 AlcanceCliente = Annotated[int | None, Depends(alcance_cliente)]
 
 
-def verificar_acceso_cliente(usuario: User, client_id: int) -> None:
+def verificar_acceso_cliente(
+    usuario: User, client_id: int, *, no_encontrado: str
+) -> None:
     """Valida que el usuario pueda tocar datos de ese organizador.
 
     Se llama en todo endpoint que reciba un identificador de recurso,
     DESPUES de cargarlo, con el client_id real del recurso. Confiar en un
     parametro de la peticion permitiria leer datos ajenos cambiando un
     numero en la URL.
+
+    Lo ajeno se responde exactamente igual que lo inexistente: mismo 404 y
+    mismo mensaje. Con un 403 para lo ajeno, un organizador podria
+    recorrer identificadores y saber cuales existen y de quien son. Por eso
+    `no_encontrado` es obligatorio y tiene que ser el mismo texto que da el
+    servicio cuando ese recurso no existe.
     """
     if usuario.rol == RolUsuario.ADMIN_PSD:
         return
 
     if usuario.client_id != client_id:
-        # Mismo mensaje que un 403 cualquiera: no revelamos si el
-        # recurso existe o no, para no filtrar informacion por sondeo.
-        raise PermisoInsuficiente("No tienes acceso a este recurso.")
+        raise RecursoNoEncontrado(no_encontrado)

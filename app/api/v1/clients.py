@@ -15,6 +15,7 @@ from app.api.deps import (
     requiere_rol,
     verificar_acceso_cliente,
 )
+from app.core.errors import ORGANIZADOR_NO_EXISTE
 from app.core.security import PermisoInsuficiente
 from app.models.base import RolUsuario
 from app.schemas.clients import ClienteActualizar, ClienteCrear, ClienteResponse
@@ -68,7 +69,7 @@ async def crear_organizador(datos: ClienteCrear, db: DB):
 @router.get("/{client_id}", response_model=ClienteResponse)
 async def obtener_organizador(client_id: int, db: DB, usuario: UsuarioActual):
     cliente = await ClientService(db).obtener(client_id)
-    verificar_acceso_cliente(usuario, cliente.id)
+    verificar_acceso_cliente(usuario, cliente.id, no_encontrado=ORGANIZADOR_NO_EXISTE)
     return cliente
 
 
@@ -78,7 +79,7 @@ async def actualizar_organizador(
 ):
     servicio = ClientService(db)
     cliente = await servicio.obtener(client_id)
-    verificar_acceso_cliente(usuario, cliente.id)
+    verificar_acceso_cliente(usuario, cliente.id, no_encontrado=ORGANIZADOR_NO_EXISTE)
 
     cambios = datos.model_dump(exclude_unset=True)
 

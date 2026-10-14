@@ -41,6 +41,19 @@ def auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+def igual_que_inexistente(ajeno, inexistente) -> None:
+    """Lo ajeno no se distingue de lo que no existe: ni codigo ni cuerpo.
+
+    Si se distinguiera, un organizador podria recorrer identificadores y
+    saber cuales existen y de quien son.
+    """
+    assert ajeno.status_code == 404, ajeno.text
+    assert (ajeno.status_code, ajeno.json()) == (
+        inexistente.status_code,
+        inexistente.json(),
+    )
+
+
 def token_de(usuario) -> str:
     return crear_access_token(
         subject=usuario.id, rol=usuario.rol, client_id=usuario.client_id
@@ -411,6 +424,28 @@ async def test_no_se_cambia_el_estado_de_una_vendida(db, clientes):
     assert filas[1].estado == EstadoAsiento.DISPONIBLE.value
 
 
+@pytest.mark.parametrize("estado", ["vendido", "cortesia", "apartado"])
+async def test_el_panel_no_pone_estados_que_nacen_de_una_orden(db, clientes, estado):
+    """Una butaca "vendida" a mano no tiene cobro ni QR.
+
+    Y una cortesia sin boleto deja al invitado afuera. Las dos nacen de
+    una orden; el apartado, del servicio de apartados.
+    """
+    cliente_a, _ = clientes
+    esc = await armar_escenario(db, cliente_a.id)
+    servicio = InventoryService(db)
+    await servicio.materializar(esc["performance_id"])
+    fila = (await butacas_de(db, esc["performance_id"]))[0]
+
+    with pytest.raises(ConflictoDeInventario) as exc:
+        await servicio.cambiar_estado(
+            esc["performance_id"], [fila.id], estado, motivo="a mano"
+        )
+
+    assert exc.value.detalle["estado"] == estado
+    assert fila.estado == EstadoAsiento.DISPONIBLE.value
+
+
 async def test_butaca_de_otra_funcion_se_rechaza(db, clientes):
     cliente_a, _ = clientes
     uno = await armar_escenario(db, cliente_a.id)
@@ -573,21 +608,26 @@ async def test_organizador_no_materializa_funcion_ajena(
 ):
     cliente_a, _ = clientes
     esc = await armar_escenario(db, cliente_a.id)
+    tk_b = auth(token_de(usuarios["org_b"]))
     r = await cliente_http.post(
-        f"{API}/performances/{esc['performance_id']}/inventario",
-        headers=auth(token_de(usuarios["org_b"])),
+        f"{API}/performances/{esc['performance_id']}/inventario", headers=tk_b
     )
-    assert r.status_code == 403
+    igual_que_inexistente(
+        r,
+        await cliente_http.post(f"{API}/performances/999999/inventario", headers=tk_b),
+    )
 
 
 async def test_organizador_no_ve_inventario_ajeno(cliente_http, db, clientes, usuarios):
     cliente_a, _ = clientes
     esc = await armar_escenario(db, cliente_a.id)
+    tk_b = auth(token_de(usuarios["org_b"]))
     r = await cliente_http.get(
-        f"{API}/performances/{esc['performance_id']}/inventario",
-        headers=auth(token_de(usuarios["org_b"])),
+        f"{API}/performances/{esc['performance_id']}/inventario", headers=tk_b
     )
-    assert r.status_code == 403
+    igual_que_inexistente(
+        r, await cliente_http.get(f"{API}/performances/999999/inventario", headers=tk_b)
+    )
 
 
 async def test_rol_acceso_no_toca_inventario(cliente_http, db, clientes, usuarios):

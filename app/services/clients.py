@@ -11,7 +11,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ErrorDeDominio, RecursoNoEncontrado
+from app.core.errors import ORGANIZADOR_NO_EXISTE, ErrorDeDominio, RecursoNoEncontrado
 from app.models.catalog import Client, Event
 
 
@@ -42,7 +42,7 @@ class ClientService:
     async def obtener(self, client_id: int) -> Client:
         cliente = await self.db.get(Client, client_id)
         if cliente is None:
-            raise RecursoNoEncontrado("El organizador no existe.")
+            raise RecursoNoEncontrado(ORGANIZADOR_NO_EXISTE)
         return cliente
 
     async def crear(self, datos: dict) -> Client:

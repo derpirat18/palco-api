@@ -67,10 +67,11 @@ ocho butacas por llamada sin límite.
   `apartado` hasta que alguien más la pide; el apartado ya funciona con
   eso, pero el resumen de inventario y el mapa la muestran ocupada. Falta
   el worker que use `ix_perf_seats_hold_expira`.
-- **El panel puede tocar butacas apartadas.** `cambiar_estado` no las
-  protege: bloquear una butaca que alguien está pagando no causa doble
-  venta (la capa 2 lo detiene al cobrar), pero el comprador pierde la
-  butaca a medio pago. Además acepta `vendido` y `apartado` como estado
-  nuevo, que solo deberían nacer de una orden o de este servicio.
+- ~~**El panel puede tocar butacas apartadas.**~~ Resuelto el 2026-10-13:
+  `cambiar_estado` ya no toca apartados vigentes, solo lleva a
+  `disponible`, `bloqueado` o `kill`, y escribe con un `UPDATE`
+  condicional dentro de un savepoint. La columna `version` no es un
+  bloqueo optimista (no está configurada como `version_id_col`); la
+  protección real es la condición del `UPDATE`.
 - **Admisión general** (ADR 0005): "apártame N de esta zona" irá encima
   de este mismo servicio.

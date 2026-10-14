@@ -40,6 +40,14 @@ class RecursoNoEncontrado(ErrorDeDominio):
     http_status = 404
 
 
+# Mensajes de "no existe". Los usan los servicios cuando el recurso no esta
+# y `verificar_acceso_cliente` cuando es de otro organizador: tienen que ser
+# el mismo texto para que las dos respuestas no se distingan.
+ORGANIZADOR_NO_EXISTE = "El organizador no existe."
+EVENTO_NO_EXISTE = "El evento no existe."
+FUNCION_NO_EXISTE = "La funcion no existe."
+
+
 class FuncionNoALaVenta(ErrorDeDominio):
     """La funcion existe y es publica, pero hoy no se le puede comprar."""
 

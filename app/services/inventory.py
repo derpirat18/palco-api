@@ -13,13 +13,14 @@ vendida dos veces o un comprador sin asiento en la puerta.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ErrorDeDominio, RecursoNoEncontrado
+from app.core.errors import FUNCION_NO_EXISTE, ErrorDeDominio, RecursoNoEncontrado
 from app.models.base import EstadoAsiento, EstadoFuncion
 from app.models.catalog import Performance, PerformancePrice, Seat, Zone
 from app.models.inventory import InventoryMove, PerformanceSeat
@@ -34,6 +35,24 @@ TAMANO_LOTE = 1_000
 ESTADOS_COMPROMETIDOS = frozenset(
     {EstadoAsiento.VENDIDO.value, EstadoAsiento.CORTESIA.value}
 )
+
+# A donde puede llevar el panel una butaca. Lo demas nace de una orden
+# (vendido, cortesia) o del servicio de apartados (apartado).
+ESTADOS_DEL_PANEL = frozenset(
+    {
+        EstadoAsiento.DISPONIBLE.value,
+        EstadoAsiento.BLOQUEADO.value,
+        EstadoAsiento.KILL.value,
+    }
+)
+
+
+def _apartado_vigente(fila: PerformanceSeat, ahora: datetime) -> bool:
+    return (
+        fila.estado == EstadoAsiento.APARTADO.value
+        and fila.hold_expira_en is not None
+        and fila.hold_expira_en > ahora
+    )
 
 
 class ConflictoDeInventario(ErrorDeDominio):
@@ -84,7 +103,7 @@ class InventoryService:
     async def obtener_funcion(self, performance_id: int) -> Performance:
         funcion = await self.db.get(Performance, performance_id)
         if funcion is None:
-            raise RecursoNoEncontrado("La funcion no existe.")
+            raise RecursoNoEncontrado(FUNCION_NO_EXISTE)
         return funcion
 
     async def resumen(self, performance_id: int) -> ResumenInventario:
@@ -263,15 +282,32 @@ class InventoryService:
         motivo: str,
         actor_id: int | None = None,
     ) -> int:
-        """Bloquea, libera o regala butacas desde el panel.
+        """Bloquea, libera o inutiliza butacas desde el panel.
 
-        No toca butacas vendidas ni cortesias ya entregadas: deshacer eso
-        es cancelar una orden, con su reembolso y su boleto anulado, no un
-        cambio de estado a mano.
+        Desde el panel solo se llega a `disponible`, `bloqueado` o `kill`.
+        `vendido` y `cortesia` nacen de una orden, con su boleto; puestos a
+        mano dejarian una butaca "vendida" sin cobro ni QR, y una cortesia
+        sin boleto con la que el invitado no entra. `apartado` solo lo
+        escribe el servicio de apartados.
+
+        Tampoco toca lo que tiene dueño: vendidas, cortesias y apartados
+        vigentes. Bloquear una butaca que alguien esta pagando le quita el
+        lugar a medio cobro. Un apartado ya vencido si se puede tocar, y
+        se limpia su `hold_id`.
+
+        La escritura es un `UPDATE` condicional que repite esas reglas en
+        la base: entre la lectura y la escritura un comprador pudo apartar
+        la butaca. Si alguna fila no avanza, no se toca ninguna.
         """
-        if estado_nuevo not in {e.value for e in EstadoAsiento}:
-            raise ConflictoDeInventario(f"Estado invalido: {estado_nuevo}.")
+        if estado_nuevo not in ESTADOS_DEL_PANEL:
+            raise ConflictoDeInventario(
+                "Desde el panel una butaca solo puede quedar disponible, "
+                "bloqueada o en kill. Las ventas y cortesias se emiten con una "
+                "orden.",
+                {"estado": estado_nuevo, "permitidos": sorted(ESTADOS_DEL_PANEL)},
+            )
 
+        ahora = await self.db.scalar(select(func.now()))
         filas = list(
             (
                 await self.db.scalars(
@@ -298,28 +334,70 @@ class InventoryService:
                 {"butacas": sorted(comprometidas)},
             )
 
-        movimientos = []
-        for fila in filas:
-            if fila.estado == estado_nuevo:
-                continue
-            movimientos.append(
-                {
-                    "performance_seat_id": fila.id,
-                    "estado_previo": fila.estado,
-                    "estado_nuevo": estado_nuevo,
-                    "motivo": motivo,
-                    "actor_tipo": "user" if actor_id else None,
-                    "actor_id": actor_id,
-                }
+        apartadas = [f.id for f in filas if _apartado_vigente(f, ahora)]
+        if apartadas:
+            raise ConflictoDeInventario(
+                "Hay butacas que un comprador tiene apartadas en este momento. "
+                "Intenta cuando venza el apartado.",
+                {"butacas": sorted(apartadas)},
             )
-            fila.estado = estado_nuevo
-            fila.version += 1
 
-        if movimientos:
-            await self.db.execute(insert(InventoryMove).values(movimientos))
+        a_cambiar = {f.id: f.estado for f in filas if f.estado != estado_nuevo}
+        if not a_cambiar:
+            return 0
 
+        # Savepoint: si alguna fila no avanza se deshacen tambien las que si,
+        # sin depender de que quien llama haga rollback.
+        async with self.db.begin_nested():
+            cambiadas = set(
+                (
+                    await self.db.scalars(
+                        update(PerformanceSeat)
+                        .where(
+                            PerformanceSeat.id.in_(list(a_cambiar)),
+                            PerformanceSeat.performance_id == performance_id,
+                            PerformanceSeat.estado.not_in(ESTADOS_COMPROMETIDOS),
+                            or_(
+                                PerformanceSeat.estado != EstadoAsiento.APARTADO.value,
+                                PerformanceSeat.hold_expira_en <= func.now(),
+                            ),
+                        )
+                        .values(
+                            estado=estado_nuevo,
+                            hold_id=None,
+                            hold_expira_en=None,
+                            version=PerformanceSeat.version + 1,
+                        )
+                        .returning(PerformanceSeat.id)
+                        .execution_options(synchronize_session="fetch")
+                    )
+                ).all()
+            )
+            perdidas = sorted(set(a_cambiar) - cambiadas)
+            if perdidas:
+                raise ConflictoDeInventario(
+                    "Algunas butacas cambiaron mientras se procesaba la "
+                    "operacion. Actualiza el mapa e intenta de nuevo.",
+                    {"butacas": perdidas},
+                )
+
+        await self.db.execute(
+            insert(InventoryMove).values(
+                [
+                    {
+                        "performance_seat_id": ps_id,
+                        "estado_previo": previo,
+                        "estado_nuevo": estado_nuevo,
+                        "motivo": motivo,
+                        "actor_tipo": "user" if actor_id else None,
+                        "actor_id": actor_id,
+                    }
+                    for ps_id, previo in a_cambiar.items()
+                ]
+            )
+        )
         await self.db.flush()
-        return len(movimientos)
+        return len(a_cambiar)
 
     async def fijar_precio_butacas(
         self, performance_id: int, performance_seat_ids: list[int], precio: Decimal

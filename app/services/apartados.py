@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import (
+    FUNCION_NO_EXISTE,
     AsientoNoDisponible,
     FuncionNoALaVenta,
     LimiteDeAsientos,
@@ -272,7 +273,7 @@ class ApartadoService:
         # Un evento en borrador no existe para el publico: mismo error que
         # una funcion inexistente, para no anunciar lo que no se ha lanzado.
         if fila is None or fila[1] != EstadoEvento.PUBLICADO.value:
-            raise RecursoNoEncontrado("La funcion no existe.")
+            raise RecursoNoEncontrado(FUNCION_NO_EXISTE)
 
         funcion: Performance = fila[0]
         motivo = self._por_que_no_se_vende(funcion, ahora)

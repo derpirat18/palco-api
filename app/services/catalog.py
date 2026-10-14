@@ -14,7 +14,12 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ErrorDeDominio, RecursoNoEncontrado
+from app.core.errors import (
+    EVENTO_NO_EXISTE,
+    FUNCION_NO_EXISTE,
+    ErrorDeDominio,
+    RecursoNoEncontrado,
+)
 from app.models.catalog import (
     Event,
     Performance,
@@ -146,13 +151,13 @@ class CatalogService:
     async def obtener_evento(self, event_id: int) -> Event:
         evento = await self.db.get(Event, event_id)
         if evento is None:
-            raise RecursoNoEncontrado("El evento no existe.")
+            raise RecursoNoEncontrado(EVENTO_NO_EXISTE)
         return evento
 
     async def obtener_funcion(self, performance_id: int) -> Performance:
         funcion = await self.db.get(Performance, performance_id)
         if funcion is None:
-            raise RecursoNoEncontrado("La funcion no existe.")
+            raise RecursoNoEncontrado(FUNCION_NO_EXISTE)
         return funcion
 
     # -------------------------------------------------------------- precios

@@ -22,6 +22,19 @@ def auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+def igual_que_inexistente(ajeno, inexistente) -> None:
+    """Lo ajeno no se distingue de lo que no existe: ni codigo ni cuerpo.
+
+    Si se distinguiera, un organizador podria recorrer identificadores y
+    saber cuales existen y de quien son.
+    """
+    assert ajeno.status_code == 404, ajeno.text
+    assert (ajeno.status_code, ajeno.json()) == (
+        inexistente.status_code,
+        inexistente.json(),
+    )
+
+
 def token_de(usuario) -> str:
     return crear_access_token(
         subject=usuario.id, rol=usuario.rol, client_id=usuario.client_id
@@ -340,15 +353,14 @@ async def test_organizador_no_lee_evento_ajeno(cliente_http, usuarios):
         cliente_http, token_de(usuarios["org_a"]), venue_id, "De A"
     )
 
-    r = await cliente_http.get(
-        f"{API}/events/{evento['id']}", headers=auth(token_de(usuarios["org_b"]))
+    tk_b = auth(token_de(usuarios["org_b"]))
+    r = await cliente_http.get(f"{API}/events/{evento['id']}", headers=tk_b)
+    igual_que_inexistente(
+        r, await cliente_http.get(f"{API}/events/999999", headers=tk_b)
     )
-    assert r.status_code == 403
 
 
-async def test_evento_inexistente_y_ajeno_responden_distinto_solo_a_psd(
-    cliente_http, usuarios
-):
+async def test_evento_inexistente_y_ajeno_se_ven_igual(cliente_http, usuarios):
     """Para un organizador, "no existe" y "no es tuyo" se ven igual.
 
     Distinguirlos permitiria descubrir que clientes hay sondeando ids.
@@ -361,8 +373,7 @@ async def test_evento_inexistente_y_ajeno_responden_distinto_solo_a_psd(
 
     ajeno = await cliente_http.get(f"{API}/events/{evento['id']}", headers=auth(tk_b))
     inexistente = await cliente_http.get(f"{API}/events/999999", headers=auth(tk_b))
-    assert ajeno.status_code == 403
-    assert inexistente.status_code == 404
+    igual_que_inexistente(ajeno, inexistente)
     # El mensaje no revela nada del recurso en ninguno de los dos casos.
     assert "De A" not in ajeno.text
 
@@ -372,12 +383,14 @@ async def test_organizador_no_modifica_evento_ajeno(cliente_http, usuarios):
     evento = await crear_evento(
         cliente_http, token_de(usuarios["org_a"]), venue_id, "De A"
     )
+    tk_b = auth(token_de(usuarios["org_b"]))
+    cuerpo = {"nombre": "Secuestrado"}
     r = await cliente_http.patch(
-        f"{API}/events/{evento['id']}",
-        headers=auth(token_de(usuarios["org_b"])),
-        json={"nombre": "Secuestrado"},
+        f"{API}/events/{evento['id']}", headers=tk_b, json=cuerpo
     )
-    assert r.status_code == 403
+    igual_que_inexistente(
+        r, await cliente_http.patch(f"{API}/events/999999", headers=tk_b, json=cuerpo)
+    )
 
 
 async def test_actualizar_evento_rehace_el_slug(cliente_http, usuarios):
@@ -466,12 +479,17 @@ async def test_organizador_no_cuelga_funcion_de_evento_ajeno(cliente_http, usuar
     evento = await crear_evento(cliente_http, token_de(usuarios["org_a"]), venue_id)
 
     inicia = datetime.now(UTC) + timedelta(days=10)
+    tk_b = auth(token_de(usuarios["org_b"]))
+    cuerpo = {"seat_map_id": mapa_id, "inicia_en": inicia.isoformat()}
     r = await cliente_http.post(
-        f"{API}/events/{evento['id']}/performances",
-        headers=auth(token_de(usuarios["org_b"])),
-        json={"seat_map_id": mapa_id, "inicia_en": inicia.isoformat()},
+        f"{API}/events/{evento['id']}/performances", headers=tk_b, json=cuerpo
     )
-    assert r.status_code == 403
+    igual_que_inexistente(
+        r,
+        await cliente_http.post(
+            f"{API}/events/999999/performances", headers=tk_b, json=cuerpo
+        ),
+    )
 
 
 async def test_organizador_no_lista_funciones_ajenas(cliente_http, usuarios):
@@ -487,11 +505,13 @@ async def test_organizador_no_lista_funciones_ajenas(cliente_http, usuarios):
     )
     assert len(propia.json()) == 1
 
+    tk_b = auth(token_de(usuarios["org_b"]))
     ajena = await cliente_http.get(
-        f"{API}/events/{evento['id']}/performances",
-        headers=auth(token_de(usuarios["org_b"])),
+        f"{API}/events/{evento['id']}/performances", headers=tk_b
     )
-    assert ajena.status_code == 403
+    igual_que_inexistente(
+        ajena, await cliente_http.get(f"{API}/events/999999/performances", headers=tk_b)
+    )
 
 
 # --------------------------------------------------------------------------
@@ -636,12 +656,17 @@ async def test_organizador_no_pone_precio_a_funcion_ajena(
     cliente_http, usuarios, funcion_lista
 ):
     f = funcion_lista
+    tk_b = auth(token_de(usuarios["org_b"]))
+    cuerpo = {"precios": {str(f["zonas"]["Luneta"]): "100"}}
     r = await cliente_http.put(
-        f"{API}/performances/{f['funcion']['id']}/precios",
-        headers=auth(token_de(usuarios["org_b"])),
-        json={"precios": {str(f["zonas"]["Luneta"]): "100"}},
+        f"{API}/performances/{f['funcion']['id']}/precios", headers=tk_b, json=cuerpo
     )
-    assert r.status_code == 403
+    igual_que_inexistente(
+        r,
+        await cliente_http.put(
+            f"{API}/performances/999999/precios", headers=tk_b, json=cuerpo
+        ),
+    )
 
 
 async def test_precios_de_funcion_inexistente(cliente_http, usuarios):

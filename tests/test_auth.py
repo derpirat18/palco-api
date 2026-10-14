@@ -6,6 +6,7 @@ concurrencia: si una falla, un cliente puede leer datos de otro.
 
 import pytest
 
+from app.core.errors import EVENTO_NO_EXISTE, RecursoNoEncontrado
 from app.core.security import (
     CredencialesInvalidas,
     PasswordDemasiadoLarga,
@@ -229,23 +230,31 @@ async def test_organizador_no_toca_datos_de_otro_cliente(usuarios, clientes):
     from app.api.deps import verificar_acceso_cliente
 
     _, cliente_b = clientes
-    with pytest.raises(PermisoInsuficiente):
-        verificar_acceso_cliente(usuarios["org_a"], cliente_b.id)
+    with pytest.raises(RecursoNoEncontrado):
+        verificar_acceso_cliente(
+            usuarios["org_a"], cliente_b.id, no_encontrado=EVENTO_NO_EXISTE
+        )
 
 
 async def test_organizador_si_toca_lo_suyo(usuarios, clientes):
     from app.api.deps import verificar_acceso_cliente
 
     cliente_a, _ = clientes
-    verificar_acceso_cliente(usuarios["org_a"], cliente_a.id)
+    verificar_acceso_cliente(
+        usuarios["org_a"], cliente_a.id, no_encontrado=EVENTO_NO_EXISTE
+    )
 
 
 async def test_admin_psd_toca_cualquier_cliente(usuarios, clientes):
     from app.api.deps import verificar_acceso_cliente
 
     cliente_a, cliente_b = clientes
-    verificar_acceso_cliente(usuarios["admin"], cliente_a.id)
-    verificar_acceso_cliente(usuarios["admin"], cliente_b.id)
+    verificar_acceso_cliente(
+        usuarios["admin"], cliente_a.id, no_encontrado=EVENTO_NO_EXISTE
+    )
+    verificar_acceso_cliente(
+        usuarios["admin"], cliente_b.id, no_encontrado=EVENTO_NO_EXISTE
+    )
 
 
 async def test_el_error_no_revela_si_el_recurso_existe(usuarios):
@@ -253,11 +262,15 @@ async def test_el_error_no_revela_si_el_recurso_existe(usuarios):
     descubrir que clientes hay sondeando identificadores."""
     from app.api.deps import verificar_acceso_cliente
 
-    with pytest.raises(PermisoInsuficiente) as a:
-        verificar_acceso_cliente(usuarios["org_a"], 99999)
-    with pytest.raises(PermisoInsuficiente) as b:
-        verificar_acceso_cliente(usuarios["org_a"], 2)
-    assert a.value.mensaje == b.value.mensaje
+    with pytest.raises(RecursoNoEncontrado) as a:
+        verificar_acceso_cliente(
+            usuarios["org_a"], 99999, no_encontrado=EVENTO_NO_EXISTE
+        )
+    with pytest.raises(RecursoNoEncontrado) as b:
+        verificar_acceso_cliente(usuarios["org_a"], 2, no_encontrado=EVENTO_NO_EXISTE)
+    assert a.value.mensaje == b.value.mensaje == EVENTO_NO_EXISTE
+    # Y es el mismo error que da el servicio cuando el evento no existe.
+    assert a.value.http_status == RecursoNoEncontrado.http_status == 404
 
 
 async def test_alcance_de_admin_es_global(usuarios):

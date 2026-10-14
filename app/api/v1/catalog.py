@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 
 from app.api.deps import DB, UsuarioActual, requiere_rol, verificar_acceso_cliente
-from app.core.errors import RecursoNoEncontrado
+from app.core.errors import EVENTO_NO_EXISTE, FUNCION_NO_EXISTE, RecursoNoEncontrado
 from app.models.base import EstadoEvento, EstadoFuncion, RolUsuario
 from app.models.catalog import Event, Performance, SeatMap, Venue, Zone
 from app.schemas.catalog import (
@@ -253,7 +253,7 @@ async def obtener_evento(event_id: int, db: DB, usuario: UsuarioActual) -> Event
     evento = await CatalogService(db).obtener_evento(event_id)
     # Se valida con el client_id real del recurso, nunca con uno que
     # venga en la peticion.
-    verificar_acceso_cliente(usuario, evento.client_id)
+    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=EVENTO_NO_EXISTE)
     return evento
 
 
@@ -268,7 +268,7 @@ async def actualizar_evento(
 ) -> Event:
     servicio = CatalogService(db)
     evento = await servicio.obtener_evento(event_id)
-    verificar_acceso_cliente(usuario, evento.client_id)
+    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=EVENTO_NO_EXISTE)
 
     cambios = datos.model_dump(exclude_unset=True)
 
@@ -302,7 +302,7 @@ async def listar_funciones(
     event_id: int, db: DB, usuario: UsuarioActual
 ) -> list[Performance]:
     evento = await CatalogService(db).obtener_evento(event_id)
-    verificar_acceso_cliente(usuario, evento.client_id)
+    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=EVENTO_NO_EXISTE)
     return list(
         (
             await db.scalars(
@@ -326,7 +326,7 @@ async def crear_funcion(
 ) -> Performance:
     servicio = CatalogService(db)
     evento = await servicio.obtener_evento(event_id)
-    verificar_acceso_cliente(usuario, evento.client_id)
+    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=EVENTO_NO_EXISTE)
 
     seat_map = await db.get(SeatMap, datos.seat_map_id)
     if seat_map is None:
@@ -361,7 +361,7 @@ async def fijar_precios(
     servicio = CatalogService(db)
     funcion = await servicio.obtener_funcion(performance_id)
     evento = await servicio.obtener_evento(funcion.event_id)
-    verificar_acceso_cliente(usuario, evento.client_id)
+    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=FUNCION_NO_EXISTE)
 
     # Los importes viajan como Decimal de extremo a extremo: convertirlos
     # a float aqui introduciria error de redondeo en el precio base.

@@ -461,6 +461,86 @@ async def test_consultar_lo_liberado_ya_no_existe(db, clientes, hold_service):
 
 
 # --------------------------------------------------------------------------
+# El panel frente a un comprador
+# --------------------------------------------------------------------------
+
+
+async def ps_id_de(db, performance_id: int, seat_id: int) -> int:
+    return (await fila(db, performance_id, seat_id)).id
+
+
+async def test_el_panel_no_le_quita_la_butaca_a_quien_la_aparto(
+    db, clientes, hold_service
+):
+    """Bloquear una butaca que alguien esta pagando le quita el lugar."""
+    esc = await funcion_a_la_venta(db, clientes[0].id)
+    pid, (apartada, libre) = esc["performance_id"], esc["seat_ids"][:2]
+    hold = nuevo_hold()
+    await ApartadoService(db, hold_service).apartar(pid, [apartada], hold)
+    ids = [await ps_id_de(db, pid, apartada), await ps_id_de(db, pid, libre)]
+
+    with pytest.raises(ConflictoDeInventario) as exc:
+        await InventoryService(db).cambiar_estado(pid, ids, "bloqueado", "prensa")
+
+    assert exc.value.detalle["butacas"] == [ids[0]]
+    assert (await fila(db, pid, apartada)).hold_id == hold
+    assert (await fila(db, pid, libre)).estado == "disponible", "no fue todo o nada"
+
+
+async def test_el_panel_si_toca_un_apartado_vencido_y_lo_limpia(
+    db, clientes, hold_service
+):
+    """Un carrito abandonado no puede impedir bloquear la butaca."""
+    esc = await funcion_a_la_venta(db, clientes[0].id)
+    pid, seat = esc["performance_id"], esc["seat_ids"][0]
+    await ApartadoService(db, hold_service).apartar(pid, [seat], nuevo_hold())
+    ahora = await db.scalar(select(func.now()))
+    await db.execute(
+        update(PerformanceSeat)
+        .where(PerformanceSeat.performance_id == pid, PerformanceSeat.seat_id == seat)
+        .values(hold_expira_en=ahora - timedelta(minutes=1))
+    )
+
+    cambiadas = await InventoryService(db).cambiar_estado(
+        pid, [await ps_id_de(db, pid, seat)], "bloqueado", "prensa"
+    )
+
+    f = await fila(db, pid, seat)
+    assert cambiadas == 1
+    assert (f.estado, f.hold_id, f.hold_expira_en) == ("bloqueado", None, None)
+
+
+async def test_el_panel_pierde_la_carrera_contra_un_comprador(
+    db, clientes, hold_service, monkeypatch
+):
+    """El panel leyo la butaca libre, pero un comprador la aparto antes de
+    que escribiera. El `UPDATE` condicional tiene que detenerlo aunque la
+    validacion previa haya dicho que si, y no tocar ninguna otra butaca.
+    """
+    import app.services.inventory as inventario
+
+    esc = await funcion_a_la_venta(db, clientes[0].id)
+    pid, (apartada, libre) = esc["performance_id"], esc["seat_ids"][:2]
+    hold = nuevo_hold()
+    await ApartadoService(db, hold_service).apartar(pid, [apartada], hold)
+    ids = [await ps_id_de(db, pid, apartada), await ps_id_de(db, pid, libre)]
+
+    # La lectura "no ve" el apartado, como si hubiera llegado despues.
+    monkeypatch.setattr(inventario, "_apartado_vigente", lambda *_: False)
+    with pytest.raises(ConflictoDeInventario) as exc:
+        await InventoryService(db).cambiar_estado(pid, ids, "bloqueado", "prensa")
+
+    assert exc.value.detalle["butacas"] == [ids[0]]
+    f = await fila(db, pid, apartada)
+    assert (f.estado, f.hold_id) == ("apartado", hold)
+    assert (await fila(db, pid, libre)).estado == "disponible", "no fue todo o nada"
+    movimientos = await db.scalar(
+        select(func.count(InventoryMove.id)).where(InventoryMove.motivo == "prensa")
+    )
+    assert movimientos == 0
+
+
+# --------------------------------------------------------------------------
 # Concurrencia real: sesiones distintas que confirman
 # --------------------------------------------------------------------------
 
