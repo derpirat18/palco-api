@@ -56,11 +56,13 @@ Estos archivos concentran la corrección del sistema. Cambios aquí se
 revisan con lupa:
 
 - `app/services/holds.py` y `app/services/lua/*.lua`
+- `app/services/apartados.py`: Postgres alrededor de Redis (ADR 0007)
 - `app/models/inventory.py`
 - Cualquier cosa que toque cobros o emisión de boletos
 
 Nunca debilitar ni marcar como `skip` las pruebas de
-`tests/test_holds_concurrency.py` ni `tests/test_auth.py`. Si una falla,
+`tests/test_holds_concurrency.py`, `tests/test_apartados.py` ni
+`tests/test_auth.py`. Si una falla,
 el bug está en el código.
 
 ## Cómo funciona el apartado de butacas

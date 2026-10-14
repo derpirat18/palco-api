@@ -38,3 +38,10 @@ class LimiteDeAsientos(ErrorDeDominio):
 class RecursoNoEncontrado(ErrorDeDominio):
     codigo = "no_encontrado"
     http_status = 404
+
+
+class FuncionNoALaVenta(ErrorDeDominio):
+    """La funcion existe y es publica, pero hoy no se le puede comprar."""
+
+    codigo = "funcion_no_a_la_venta"
+    http_status = 409
