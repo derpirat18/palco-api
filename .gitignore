@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+.DS_Store
+.idea/
+.vscode/
+dist/
+build/
+*.egg-info/
+
+# Datos de un Redis levantado a mano dentro del proyecto.
+appendonlydir/
+dump.rdb
+*.rdb
+*.aof

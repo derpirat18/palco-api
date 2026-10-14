@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: palco
+      POSTGRES_PASSWORD: palco
+      POSTGRES_DB: palco_dev
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Se ejecuta solo la primera vez, con el volumen vacio.
+      - ./scripts/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U palco"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # appendonly para que un reinicio no borre los apartados en vuelo.
+    command: redis-server --appendonly yes
+    ports: ["6379:6379"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:

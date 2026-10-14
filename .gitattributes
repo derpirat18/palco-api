@@ -1,0 +1,8 @@
+# Finales de linea LF en todo el repositorio, aunque se edite en Windows.
+# Sin esto, un archivo guardado con CRLF rompe el contenedor de Linux.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.webp binary
