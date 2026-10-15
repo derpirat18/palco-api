@@ -23,13 +23,6 @@ class RecintoPublicoResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class CargosResponse(BaseModel):
-    servicio_pct: Decimal
-    por_orden: Decimal
-
-    model_config = {"from_attributes": True}
-
-
 class MedicionResponse(BaseModel):
     ga4_id: str | None
     meta_pixel_id: str | None
@@ -45,9 +38,9 @@ class FuncionPublicaResponse(BaseModel):
     estado_venta: Literal["en_venta", "proximamente", "agotada", "venta_cerrada"]
     venta_abre_en: datetime | None
     disponibilidad: Literal["disponible", "ultimos_lugares", "agotado"] | None
+    # Lo que paga el comprador por el boleto mas barato libre: sin cargos
+    # encima, el precio anunciado es el precio final (ADR 0012).
     precio_desde: Decimal | None
-    # Con cargo por servicio. El cargo por orden se suma una vez al pagar.
-    precio_desde_con_cargo: Decimal | None
 
     model_config = {"from_attributes": True}
 
@@ -60,7 +53,6 @@ class EventoPublicoResponse(BaseModel):
     descripcion: str | None
     imagen_url: str | None
     recinto: RecintoPublicoResponse
-    cargos: CargosResponse
     medicion: MedicionResponse
     funciones: list[FuncionPublicaResponse]
 

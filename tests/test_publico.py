@@ -10,7 +10,6 @@ Dos cosas importan mas que el resto:
 
 import uuid
 from datetime import timedelta
-from decimal import Decimal
 
 import pytest
 from sqlalchemy import func, select, update
@@ -20,7 +19,6 @@ from app.models.base import EstadoEvento, EstadoFuncion
 from app.models.catalog import Client, Event, Performance, Seat
 from app.models.inventory import PerformanceSeat
 from app.services.apartados import ApartadoService
-from app.services.venta import Cargos
 from tests.test_apartados import funcion_a_la_venta
 from tests.test_inventory import armar_escenario
 
@@ -91,14 +89,14 @@ async def test_pagina_del_evento_por_su_link(cliente_http, db, clientes):
     assert cuerpo["descripcion"] == "Funcion familiar de 90 minutos."
     assert cuerpo["recinto"]["ciudad"] == "CDMX"
     assert cuerpo["recinto"]["zona_horaria"]
-    assert cuerpo["cargos"] == {"servicio_pct": "10.00", "por_orden": "50.00"}
+    # Sin cargos al comprador: el precio anunciado es el que paga.
+    assert "cargos" not in cuerpo
 
     [funcion] = cuerpo["funciones"]
     assert funcion["id"] == esc["performance_id"]
     assert funcion["estado_venta"] == "en_venta"
     assert funcion["disponibilidad"] == "disponible"
     assert funcion["precio_desde"] == "400.00"
-    assert funcion["precio_desde_con_cargo"] == "440.00"
 
 
 async def test_no_sale_nada_del_organizador(cliente_http, db, clientes):
@@ -117,7 +115,6 @@ async def test_no_sale_nada_del_organizador(cliente_http, db, clientes):
         "descripcion",
         "imagen_url",
         "recinto",
-        "cargos",
         "medicion",
         "funciones",
     }
@@ -140,7 +137,6 @@ async def test_no_sale_nada_del_organizador(cliente_http, db, clientes):
         "venta_abre_en",
         "disponibilidad",
         "precio_desde",
-        "precio_desde_con_cargo",
     }
     texto = str(cuerpo).lower()
     assert "comision" not in texto
@@ -278,7 +274,6 @@ async def test_precio_desde_solo_de_lo_que_se_puede_comprar(cliente_http, db, cl
     funcion = await una_funcion(cliente_http, await slug_de(db, esc["event_id"]))
 
     assert funcion["precio_desde"] == "800.00"
-    assert funcion["precio_desde_con_cargo"] == "880.00"
 
 
 async def test_apartado_vigente_no_cuenta_como_libre_y_el_vencido_si(
@@ -327,31 +322,6 @@ async def test_sin_medicion_conectada_salen_vacios(cliente_http, db, clientes):
     r = await pagina(cliente_http, await slug_de(db, esc["event_id"]))
 
     assert r.json()["medicion"] == {"ga4_id": None, "meta_pixel_id": None}
-
-
-# --------------------------------------------------------------------------
-# Cargos
-# --------------------------------------------------------------------------
-
-
-async def test_el_evento_puede_tener_cargo_propio(cliente_http, db, clientes):
-    esc = await funcion_a_la_venta(db, clientes[0].id)
-    evento = await db.get(Event, esc["event_id"])
-    evento.cargo_servicio_pct = Decimal("5.00")
-    await db.flush()
-
-    r = await pagina(cliente_http, evento.slug)
-
-    assert r.json()["cargos"]["servicio_pct"] == "5.00"
-    assert r.json()["funciones"][0]["precio_desde_con_cargo"] == "420.00"
-
-
-async def test_el_cargo_se_redondea_al_centavo_hacia_arriba_en_la_mitad():
-    cargos = Cargos(servicio_pct=Decimal("10.00"), por_orden=Decimal("50.00"))
-    assert cargos.con_cargo_de_servicio(Decimal("333.33")) == Decimal("366.66")
-    assert cargos.con_cargo_de_servicio(Decimal("0.05")) == Decimal("0.06")
-    # 0.165: el redondeo bancario daria 0.16; el comercial, 0.17.
-    assert cargos.con_cargo_de_servicio(Decimal("0.15")) == Decimal("0.17")
 
 
 # --------------------------------------------------------------------------

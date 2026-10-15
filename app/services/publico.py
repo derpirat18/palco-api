@@ -21,7 +21,7 @@ from app.core.errors import EVENTO_NO_EXISTE, RecursoNoEncontrado
 from app.models.base import EstadoAsiento, EstadoFuncion
 from app.models.catalog import Client, Event, Performance, PerformancePrice, Venue
 from app.models.inventory import PerformanceSeat
-from app.services.venta import Cargos, cargos_de, motivo_no_se_vende, visible_al_publico
+from app.services.venta import iva_de, motivo_no_se_vende, visible_al_publico
 
 # Por debajo de esta fraccion de butacas libres se anuncia "ultimos lugares".
 # Es la regla del prototipo: menos del 12 % del inventario vendible.
@@ -56,7 +56,6 @@ class FuncionPublica:
     # disponible | ultimos_lugares | agotado; None si aun no hay inventario
     disponibilidad: str | None
     precio_desde: Decimal | None
-    precio_desde_con_cargo: Decimal | None
 
 
 @dataclass(frozen=True)
@@ -81,7 +80,6 @@ class EventoPublico:
     descripcion: str | None
     imagen_url: str | None
     recinto: RecintoPublico
-    cargos: Cargos
     medicion: MedicionPublica
     funciones: tuple[FuncionPublica, ...]
 
@@ -125,10 +123,16 @@ class PublicoService:
             ).all()
         )
 
-        cargos = cargos_de(evento, cliente)
         ids = [f.id for f in funciones]
         inventario = await self._inventario(ids)
-        precio_de_zona = await self._precio_minimo_de_zona(ids)
+        # Sin inventario todavia, "desde" sale del precio de zona, que esta
+        # guardado como lo capturo el organizador: se convierte igual que
+        # al generar el inventario.
+        iva = iva_de(evento)
+        precio_de_zona = {
+            pid: iva.precio_al_publico(precio)
+            for pid, precio in (await self._precio_minimo_de_zona(ids)).items()
+        }
 
         return EventoPublico(
             uuid=evento.uuid,
@@ -144,13 +148,12 @@ class PublicoService:
                 pais=recinto.pais,
                 zona_horaria=recinto.zona_horaria,
             ),
-            cargos=cargos,
             medicion=MedicionPublica(
                 ga4_id=cliente.ga_id, meta_pixel_id=cliente.pixel_id
             ),
             funciones=tuple(
                 self._funcion_publica(
-                    f, ahora, cargos, inventario.get(f.id), precio_de_zona.get(f.id)
+                    f, ahora, inventario.get(f.id), precio_de_zona.get(f.id)
                 )
                 for f in funciones
             ),
@@ -162,7 +165,6 @@ class PublicoService:
     def _funcion_publica(
         funcion: Performance,
         ahora: datetime,
-        cargos: Cargos,
         inventario: _Inventario | None,
         precio_de_zona: Decimal | None,
     ) -> FuncionPublica:
@@ -205,9 +207,6 @@ class PublicoService:
             venta_abre_en=funcion.venta_abre_en,
             disponibilidad=disponibilidad,
             precio_desde=desde,
-            precio_desde_con_cargo=(
-                cargos.con_cargo_de_servicio(desde) if desde is not None else None
-            ),
         )
 
     async def _inventario(self, performance_ids: list[int]) -> dict[int, _Inventario]:

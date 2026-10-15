@@ -49,8 +49,8 @@ def _orden(orden: Order, partidas: list[OrderItem]) -> OrdenResponse:
         estado=orden.estado,
         moneda=orden.moneda,
         subtotal=orden.subtotal,
-        cargo_servicio=orden.cargo_servicio,
-        cargo_orden=orden.cargo_orden,
+        iva=orden.iva,
+        iva_pct=orden.iva_pct_snap,
         descuento=orden.descuento,
         total=orden.total,
         expira_en=orden.expira_en,
@@ -60,7 +60,6 @@ def _orden(orden: Order, partidas: list[OrderItem]) -> OrdenResponse:
                 zona=p.zona_snap,
                 asiento=p.asiento_snap,
                 precio=p.precio_unitario,
-                cargo_servicio=p.cargo_servicio,
                 importe=p.importe,
             )
             for p in partidas

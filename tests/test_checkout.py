@@ -23,6 +23,7 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.errors import (
@@ -205,14 +206,11 @@ async def test_la_orden_congela_importes_y_condiciones(
     )
     orden = iniciada.orden
 
-    # 2 x 800, 10 % de servicio por butaca, 50 por orden.
+    # 2 x 800 y nada mas: sin cargos al comprador (ADR 0012). La comision
+    # se congela para la liquidacion del organizador; no se le cobra a el.
     assert orden.subtotal == Decimal("1600.00")
-    assert orden.cargo_servicio == Decimal("160.00")
-    assert orden.cargo_orden == Decimal("50.00")
-    assert orden.total == Decimal("1810.00")
+    assert orden.total == Decimal("1600.00")
     assert orden.comision_pct_snap == Decimal("10.00")
-    assert orden.cargo_servicio_pct_snap == Decimal("10.00")
-    assert orden.cargo_orden_snap == Decimal("50.00")
     assert orden.estado == "pendiente"
     assert orden.hold_id == hold
     assert re.fullmatch(r"PAL-[0-9A-HJKMNP-TV-Z]{8}", orden.folio)
@@ -221,10 +219,10 @@ async def test_la_orden_congela_importes_y_condiciones(
         ("Luneta", "Fila A · 1"),
         ("Luneta", "Fila A · 2"),
     ]
-    assert all(p.importe == Decimal("880.00") for p in iniciada.partidas)
+    assert all(p.importe == Decimal("800.00") for p in iniciada.partidas)
 
     intento = stripe_falso.intentos[orden.stripe_payment_intent_id]
-    assert intento.monto_centavos == 181000
+    assert intento.monto_centavos == 160000, "Stripe cobra el precio, nada encima"
     assert intento.moneda == "MXN"
     assert intento.metadata["orden_uuid"] == str(orden.uuid)
     assert iniciada.client_secret == intento.client_secret
@@ -238,12 +236,34 @@ async def test_cambiar_la_comision_despues_no_mueve_la_orden(
     )
     cliente = await db.get(Client, clientes[0].id)
     cliente.comision_pct = Decimal("25.00")
-    cliente.cargo_orden = Decimal("999.00")
     await db.flush()
 
     orden = await recargar(db, Order, iniciada.orden.id)
     assert orden.comision_pct_snap == Decimal("10.00")
-    assert orden.cargo_orden_snap == Decimal("50.00")
+    assert orden.total == Decimal("1600.00"), "la comision no cambia el precio"
+
+
+async def test_la_base_no_deja_cobrar_mas_que_el_precio(db, clientes):
+    """Aunque un bug del checkout sumara algo, la base lo rechaza."""
+    esc = await escenario(db, clientes[0].id)
+    persona = Customer(email="cargo@correo.mx")
+    db.add(persona)
+    await db.flush()
+    with pytest.raises(IntegrityError, match="ck_orders_total_es_el_precio"):
+        async with db.begin_nested():
+            db.add(
+                Order(
+                    folio="PAL-CARGO001",
+                    customer_id=persona.id,
+                    performance_id=esc["performance_id"],
+                    subtotal=Decimal("1600.00"),
+                    descuento=Decimal("0"),
+                    total=Decimal("1650.00"),
+                    comision_pct_snap=Decimal("10.00"),
+                    idempotency_key="cargo-oculto",
+                )
+            )
+            await db.flush()
 
 
 async def test_la_orden_vence_con_el_apartado_extendido(
@@ -435,9 +455,6 @@ async def test_funcion_que_ya_no_vende_no_cobra(
 async def test_menos_de_diez_pesos_no_va_a_stripe(
     db, clientes, hold_service, stripe_falso
 ):
-    cliente = await db.get(Client, clientes[0].id)
-    cliente.cargo_orden = Decimal("0")
-    cliente.cargo_servicio_pct = Decimal("0")
     esc = await escenario(db, clientes[0].id)
     await db.execute(
         update(PerformanceSeat)
@@ -600,7 +617,7 @@ async def test_la_venta_queda_en_la_bandeja_sin_datos_personales(
     assert hecho.tipo == "orden.pagada"
     assert hecho.publicado_en is None
     assert hecho.payload["orden_uuid"] == str(orden.uuid)
-    assert hecho.payload["total"] == "1810.00"
+    assert hecho.payload["total"] == "1600.00"
     assert len(hecho.payload["boletos"]) == 2
     texto = json.dumps(hecho.payload)
     assert "correo.mx" not in texto and "+52" not in texto
@@ -974,8 +991,8 @@ async def test_checkout_por_api_y_lo_que_ve_el_comprador(
         "estado",
         "moneda",
         "subtotal",
-        "cargo_servicio",
-        "cargo_orden",
+        "iva",
+        "iva_pct",
         "descuento",
         "total",
         "expira_en",
@@ -986,10 +1003,11 @@ async def test_checkout_por_api_y_lo_que_ve_el_comprador(
         "zona",
         "asiento",
         "precio",
-        "cargo_servicio",
         "importe",
     }
-    assert cuerpo["orden"]["total"] == "1810.00"
+    assert cuerpo["orden"]["total"] == "1600.00"
+    # 16 % incluido: de cada $800, $110.34 son IVA.
+    assert (cuerpo["orden"]["iva"], cuerpo["orden"]["iva_pct"]) == ("220.68", "16.00")
     assert cuerpo["orden"]["descuento"] == "0.00", "mismo formato que al consultar"
     assert cuerpo["pago"] == {
         "proveedor": "stripe",

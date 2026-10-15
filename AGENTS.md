@@ -7,8 +7,8 @@ repositorio. Es la fuente de verdad de cómo se trabaja aquí.
 
 Palco es una plataforma de boletaje. PSD opera la plataforma; los
 organizadores (circos, teatros, productores) son clientes que venden
-boletos a través de ella. Se cobra comisión al organizador y cargo por
-servicio al comprador.
+boletos a través de ella. PSD cobra una comisión al organizador; al
+comprador no se le cobra nada encima del precio del boleto (ADR 0012).
 
 **Esto maneja dinero real y controla el acceso físico a eventos.** Un
 error no es un bug: es un cliente sin asiento en la puerta del teatro, o
@@ -57,8 +57,9 @@ revisan con lupa:
 
 - `app/services/holds.py` y `app/services/lua/*.lua`
 - `app/services/apartados.py`: Postgres alrededor de Redis (ADR 0007)
-- `app/services/venta.py`: cuándo una función se vende y cuánto cuesta con
-  cargos. La usan la página pública, el apartado y el cobro
+- `app/services/venta.py`: cuándo una función se vende y cómo se pasa
+  de precio capturado a precio con IVA (`Iva`). La usan la página
+  pública, el inventario, el apartado y el cobro
 - `app/models/inventory.py`
 - `app/services/checkout.py`, `app/services/pasarela.py` y
   `app/services/webhooks.py`: cobro y emisión (ADR 0010)
@@ -168,11 +169,19 @@ Detalle en ADR 0010. Lo que no se rompe:
 - **Dinero**: siempre `Numeric`, nunca `float`.
 - **Fechas**: siempre `DateTime(timezone=True)`, siempre en UTC en la
   base. La conversión a hora local es del recinto (`venues.zona_horaria`).
+- **El comprador paga el precio del boleto y nada más.** Sin cargo por
+  servicio ni por orden. La base lo exige: `ck_orders_total_es_el_precio`
+  y `ck_order_items_importe_es_el_precio`. La comisión de PSD y la de
+  Stripe se le descuentan al organizador en su liquidación (ADR 0012).
+- **IVA por evento** (ADR 0013): la tasa la escribe el organizador y dice
+  si sus precios la incluyen o son "más IVA". El comprador ve y paga
+  siempre con IVA. Todo precio capturado pasa por `venta.Iva` antes de
+  llegar a una butaca o a la página pública; nunca se suma IVA a mano en
+  otro lado. Cada orden congela `iva` e `iva_pct_snap`.
 - **Congelar lo que se vendió**: `order_items` guarda `zona_snap` y
-  `asiento_snap`; `orders` guarda `comision_pct_snap`,
-  `cargo_servicio_pct_snap` y `cargo_orden_snap`. Las liquidaciones suman
-  esos valores, **nunca** recalculan desde la configuración vigente del
-  cliente. Si mañana cambia una comisión, el histórico no se mueve.
+  `asiento_snap`; `orders` guarda `comision_pct_snap`. Las liquidaciones
+  suman esos valores, **nunca** recalculan desde la configuración vigente
+  del cliente. Si mañana cambia una comisión, el histórico no se mueve.
 - **Enumeraciones**: texto con `CHECK`, no tipo `ENUM` de Postgres.
   Agregar un valor a un ENUM nativo bloquea la tabla.
 - **Identificadores**: `BIGINT` autoincremental por dentro, `uuid` hacia

@@ -11,7 +11,7 @@ import re
 import unicodedata
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
@@ -153,6 +153,46 @@ class CatalogService:
         if evento is None:
             raise RecursoNoEncontrado(EVENTO_NO_EXISTE)
         return evento
+
+    async def verificar_cambio_de_iva(self, evento: Event, cambios: dict) -> None:
+        """Cambiar como se capturan los precios no puede mover lo que ya se vende.
+
+        Con "IVA incluido", cambiar la tasa solo cambia el desglose de las
+        compras siguientes: se permite siempre. Pero pasar a "mas IVA" (o
+        cambiar la tasa estando en "mas IVA") cambia lo que paga el
+        comprador, y las butacas ya generadas tienen su precio. Eso solo se
+        decide antes de generar inventario.
+
+        Un `null` explicito en estos campos se ignora: no hay evento sin
+        tratamiento de IVA.
+        """
+        for campo in ("iva_pct", "precios_incluyen_iva"):
+            if campo in cambios and cambios[campo] is None:
+                del cambios[campo]
+
+        incluido = cambios.get("precios_incluyen_iva", evento.precios_incluyen_iva)
+        pct = cambios.get("iva_pct", evento.iva_pct)
+        cambia_precio = incluido != evento.precios_incluyen_iva or (
+            not incluido and pct != evento.iva_pct
+        )
+        if not cambia_precio:
+            return
+
+        con_inventario = await self.db.scalar(
+            select(
+                exists().where(
+                    Performance.event_id == evento.id,
+                    Performance.inventario_generado.is_(True),
+                )
+            )
+        )
+        if con_inventario:
+            raise ConflictoDeCatalogo(
+                "Este evento ya tiene inventario: cambiar como se capturan los "
+                "precios cambiaria lo que paga el comprador. Se decide antes "
+                "de generar el inventario.",
+                {"campos": sorted({"iva_pct", "precios_incluyen_iva"} & set(cambios))},
+            )
 
     async def obtener_funcion(self, performance_id: int) -> Performance:
         funcion = await self.db.get(Performance, performance_id)

@@ -127,12 +127,13 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     )
 
     # --- Importes ---
+    # El comprador paga el precio de sus boletos y nada mas: sin cargos
+    # encima (ADR 0012). La base lo exige con `total_es_el_precio`.
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    cargo_servicio: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=0
-    )
-    cargo_orden: Mapped[Decimal] = mapped_column(
-        Numeric(10, 2), nullable=False, default=0
+    # Cuanto del total es IVA, para la factura y la liquidacion. Ya esta
+    # dentro del total: no se suma (ADR 0013).
+    iva: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default="0"
     )
     descuento: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, default=0
@@ -145,10 +146,10 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     # configuracion vigente del cliente. Si manana cambia la comision, el
     # historico no se mueve.
     comision_pct_snap: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
-    cargo_servicio_pct_snap: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False
+    # Tasa de IVA del evento al momento de la compra.
+    iva_pct_snap: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=0, server_default="0"
     )
-    cargo_orden_snap: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
 
     # --- Pago ---
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(80))
@@ -185,6 +186,8 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
             name="estado_valido",
         ),
         CheckConstraint("total >= 0", name="total_no_negativo"),
+        CheckConstraint("total = subtotal - descuento", name="total_es_el_precio"),
+        CheckConstraint("iva >= 0 AND iva <= total", name="iva_valido"),
         Index("ix_orders_performance_estado", "performance_id", "estado"),
         Index("ix_orders_customer", "customer_id"),
         # Un apartado, a lo mas una orden esperando pago. Dos ordenes vivas
@@ -228,8 +231,9 @@ class OrderItem(Base, PKMixin):
     asiento_snap: Mapped[str] = mapped_column(String(40), nullable=False)
 
     precio_unitario: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    cargo_servicio: Mapped[Decimal] = mapped_column(
-        Numeric(10, 2), nullable=False, default=0
+    # IVA contenido en el importe (ADR 0013).
+    iva: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False, default=0, server_default="0"
     )
     descuento: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), nullable=False, default=0
@@ -244,6 +248,10 @@ class OrderItem(Base, PKMixin):
     boleto: Mapped["Ticket"] = relationship(back_populates="partida", uselist=False)
 
     __table_args__ = (
+        CheckConstraint(
+            "importe = precio_unitario - descuento", name="importe_es_el_precio"
+        ),
+        CheckConstraint("iva >= 0 AND iva <= importe", name="iva_valido"),
         # Capa 3 de la garantia: ni un bug de aplicacion puede producir dos
         # partidas vivas sobre la misma butaca. El indice parcial permite
         # revender una butaca cuya orden se cancelo.

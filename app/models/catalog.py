@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -43,16 +44,12 @@ class Client(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     email: Mapped[str | None] = mapped_column(String(255))
     clabe: Mapped[str | None] = mapped_column(String(18))
 
-    # Condiciones comerciales vigentes. Cada orden congela las suyas:
-    # ver orders.comision_pct_snap. Cambiar esto NO altera el historico.
+    # Lo que PSD le descuenta al organizador sobre el precio de sus
+    # boletos. Al comprador no se le cobra nada encima (ADR 0012). Cada
+    # orden congela la suya: ver orders.comision_pct_snap. Cambiar esto NO
+    # altera el historico.
     comision_pct: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, default=Decimal("10.00")
-    )
-    cargo_servicio_pct: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False, default=Decimal("10.00")
-    )
-    cargo_orden: Mapped[Decimal] = mapped_column(
-        Numeric(10, 2), nullable=False, default=Decimal("50.00")
     )
 
     # Medicion propia de cada organizador.
@@ -66,10 +63,6 @@ class Client(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     __table_args__ = (
         CheckConstraint(
             "comision_pct >= 0 AND comision_pct <= 100", name="comision_rango"
-        ),
-        CheckConstraint(
-            "cargo_servicio_pct >= 0 AND cargo_servicio_pct <= 100",
-            name="cargo_servicio_rango",
         ),
     )
 
@@ -187,9 +180,16 @@ class Event(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     )
     destacado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    # Excepciones comerciales para este evento. Nulo = hereda del cliente.
-    cargo_servicio_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
-    cargo_orden: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    # IVA del evento, lo decide el organizador con su contador (ADR 0013).
+    # La tasa la escribe el: 16, 8, 0 si esta exento... El comprador ve
+    # siempre el precio con IVA; `precios_incluyen_iva` dice si los precios
+    # capturados ya lo traen o si el sistema se los suma.
+    iva_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("16.00"), server_default="16.00"
+    )
+    precios_incluyen_iva: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
 
     cliente: Mapped["Client"] = relationship(back_populates="eventos")
     funciones: Mapped[list["Performance"]] = relationship(back_populates="evento")
@@ -198,6 +198,7 @@ class Event(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
         CheckConstraint(
             "estado IN ('borrador','publicado','archivado')", name="estado_valido"
         ),
+        CheckConstraint("iva_pct >= 0 AND iva_pct <= 100", name="iva_rango"),
         Index("ix_events_estado_destacado", "estado", "destacado"),
     )
 

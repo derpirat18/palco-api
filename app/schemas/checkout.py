@@ -35,7 +35,6 @@ class PartidaResponse(BaseModel):
     zona: str
     asiento: str
     precio: Decimal
-    cargo_servicio: Decimal
     importe: Decimal
 
 
@@ -45,8 +44,9 @@ class OrdenResponse(BaseModel):
     estado: Literal["pendiente", "pagada", "cancelada", "reembolsada", "expirada"]
     moneda: str
     subtotal: Decimal
-    cargo_servicio: Decimal
-    cargo_orden: Decimal
+    # IVA contenido en el total; ya esta incluido, no se suma.
+    iva: Decimal
+    iva_pct: Decimal
     descuento: Decimal
     total: Decimal
     expira_en: datetime | None

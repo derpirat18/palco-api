@@ -54,8 +54,8 @@ async def test_alta_aplica_condiciones_por_omision(cliente_http, usuarios):
     assert r.status_code == 201, r.text
     c = r.json()
     assert Decimal(c["comision_pct"]) == Decimal("10.00")
-    assert Decimal(c["cargo_servicio_pct"]) == Decimal("10.00")
-    assert Decimal(c["cargo_orden"]) == Decimal("50.00")
+    # Al comprador no se le cobra nada encima: no hay cargos que configurar.
+    assert "cargo_servicio_pct" not in c and "cargo_orden" not in c
     assert c["activo"] is True
 
 
@@ -70,13 +70,11 @@ async def test_alta_con_condiciones_propias(cliente_http, usuarios):
             "email": "  Contacto@Teatro4.MX ",
             "clabe": "0021 8004 5678 9012 34",
             "comision_pct": "7.50",
-            "cargo_orden": "35",
         },
     )
     assert r.status_code == 201, r.text
     c = r.json()
     assert Decimal(c["comision_pct"]) == Decimal("7.50")
-    assert Decimal(c["cargo_orden"]) == Decimal("35.00")
     # Los identificadores se normalizan al guardarlos.
     assert c["rfc"] == "TCU123456AB7"
     assert c["email"] == "contacto@teatro4.mx"
@@ -109,7 +107,6 @@ async def test_nombre_repetido_avisa(cliente_http, usuarios):
         ("comision_pct", "150"),
         ("comision_pct", "-1"),
         ("comision_pct", "10.555"),
-        ("cargo_orden", "-5"),
         ("nombre", "X"),
     ],
 )
@@ -191,8 +188,6 @@ async def test_organizador_no_edita_su_comision(cliente_http, usuarios, clientes
 @pytest.mark.parametrize(
     "campo,valor",
     [
-        ("cargo_servicio_pct", "0"),
-        ("cargo_orden", "0"),
         ("activo", False),
         ("nombre", "Nombre Secuestrado"),
     ],

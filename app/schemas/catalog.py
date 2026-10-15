@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field
 
 from app.services.seat_maps import EspecificacionDeMapa  # noqa: F401  (re-export)
 
+# Tasa de IVA que escribe el organizador: 16, 8, 0 si esta exento... Dos
+# decimales como en la base; mas de 100 es un error de dedo.
+TasaIva = Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
+
 
 class VenueCrear(BaseModel):
     nombre: str = Field(min_length=1, max_length=160)
@@ -67,8 +71,9 @@ class EventoCrear(BaseModel):
     descripcion: str | None = None
     imagen_url: str | None = Field(default=None, max_length=500)
     destacado: bool = False
-    cargo_servicio_pct: Decimal | None = Field(default=None, ge=0, le=100)
-    cargo_orden: Decimal | None = Field(default=None, ge=0)
+    # Lo decide el organizador con su contador (ADR 0013).
+    iva_pct: TasaIva = Decimal("16.00")
+    precios_incluyen_iva: bool = True
 
 
 class EventoActualizar(BaseModel):
@@ -78,8 +83,8 @@ class EventoActualizar(BaseModel):
     imagen_url: str | None = Field(default=None, max_length=500)
     destacado: bool | None = None
     estado: str | None = None
-    cargo_servicio_pct: Decimal | None = Field(default=None, ge=0, le=100)
-    cargo_orden: Decimal | None = Field(default=None, ge=0)
+    iva_pct: TasaIva | None = None
+    precios_incluyen_iva: bool | None = None
 
 
 class EventoResponse(BaseModel):
@@ -94,6 +99,8 @@ class EventoResponse(BaseModel):
     imagen_url: str | None
     estado: str
     destacado: bool
+    iva_pct: Decimal
+    precios_incluyen_iva: bool
 
     model_config = {"from_attributes": True}
 

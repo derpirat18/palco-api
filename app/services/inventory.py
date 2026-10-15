@@ -22,8 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import FUNCION_NO_EXISTE, ErrorDeDominio, RecursoNoEncontrado
 from app.models.base import EstadoAsiento, EstadoFuncion
-from app.models.catalog import Performance, PerformancePrice, Seat, Zone
+from app.models.catalog import Event, Performance, PerformancePrice, Seat, Zone
 from app.models.inventory import InventoryMove, PerformanceSeat
+from app.services.venta import Iva, iva_de
 
 # Las butacas se insertan por lotes. Un teatro mediano son miles de filas
 # y mandarlas en una sola sentencia hace un paquete enorme contra el
@@ -405,8 +406,10 @@ class InventoryService:
         """Precio por excepcion para butacas concretas.
 
         Las marca como personalizadas para que un cambio posterior de
-        precio de zona no se las lleve de vuelta.
+        precio de zona no se las lleve de vuelta. El precio llega como lo
+        captura el organizador: con "mas IVA", aqui se le suma.
         """
+        precio = (await self._iva(performance_id)).precio_al_publico(precio)
         resultado = await self.db.execute(
             update(PerformanceSeat)
             .where(
@@ -484,7 +487,24 @@ class InventoryService:
             _ButacaDelMapa(seat_id=sid, zone_id=zid, kill=k) for sid, zid, k in filas
         ]
 
+    async def _iva(self, performance_id: int) -> Iva:
+        evento = await self.db.scalar(
+            select(Event)
+            .join(Performance, Performance.event_id == Event.id)
+            .where(Performance.id == performance_id)
+        )
+        if evento is None:
+            raise RecursoNoEncontrado(FUNCION_NO_EXISTE)
+        return iva_de(evento)
+
     async def _precios_por_zona(self, performance_id: int) -> dict[int, Decimal]:
+        """Precio al publico de cada zona: lo que paga el comprador.
+
+        Los precios de zona se guardan como los capturo el organizador; si
+        el evento es "mas IVA", aqui se convierten. Es el unico camino por
+        el que un precio capturado llega a una butaca.
+        """
+        iva = await self._iva(performance_id)
         filas = (
             await self.db.execute(
                 select(PerformancePrice.zone_id, PerformancePrice.precio).where(
@@ -493,7 +513,7 @@ class InventoryService:
                 )
             )
         ).all()
-        return {zone_id: precio for zone_id, precio in filas}
+        return {zone_id: iva.precio_al_publico(precio) for zone_id, precio in filas}
 
     def _verificar_precios(
         self, butacas: list[_ButacaDelMapa], precios: dict[int, Decimal]

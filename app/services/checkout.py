@@ -67,7 +67,7 @@ from app.services.pasarela import (
     IntentoDePago,
     Pasarela,
 )
-from app.services.venta import CENTAVO, cargos_de
+from app.services.venta import CENTAVO, iva_de
 
 MONEDA = "MXN"
 # Con centavos: la respuesta siempre dice "0.00", igual que lo leido de la base.
@@ -249,25 +249,27 @@ class CheckoutService:
         expira_en = await self._extender(performance_id, seat_ids, hold_id, ahora)
         await self._cerrar_vencidas(ps_ids)
 
+        # El comprador paga el precio del boleto y nada mas (ADR 0012).
+        # La comision de PSD sale de ese precio y se le descuenta al
+        # organizador en su liquidacion; aqui solo se congela.
+        # El precio de la butaca ya trae el IVA (ADR 0013); aqui solo se
+        # desglosa y se congela la tasa, para facturar sin recalcular.
+        iva = iva_de(evento)
         detalle = await self._detalle_de_butacas(ps_ids)
-        cargos = cargos_de(evento, cliente)
-        partidas = []
-        for ps_id, precio, zona, fila, numero in detalle:
-            con_cargo = cargos.con_cargo_de_servicio(precio)
-            partidas.append(
-                OrderItem(
-                    performance_seat_id=ps_id,
-                    zona_snap=zona,
-                    asiento_snap=f"Fila {fila} · {numero}",
-                    precio_unitario=precio,
-                    cargo_servicio=con_cargo - precio,
-                    descuento=CERO,
-                    importe=con_cargo,
-                )
+        partidas = [
+            OrderItem(
+                performance_seat_id=ps_id,
+                zona_snap=zona,
+                asiento_snap=f"Fila {fila} · {numero}",
+                precio_unitario=precio,
+                iva=iva.iva_contenido(precio),
+                descuento=CERO,
+                importe=precio,
             )
+            for ps_id, precio, zona, fila, numero in detalle
+        ]
         subtotal = sum((p.precio_unitario for p in partidas), CERO)
-        cargo_servicio = sum((p.cargo_servicio for p in partidas), CERO)
-        total = subtotal + cargo_servicio + cargos.por_orden
+        total = subtotal
         if total < TOTAL_MINIMO:
             raise OrdenSinCobro(
                 "Una compra con pago debe ser de al menos $10.00.",
@@ -282,14 +284,12 @@ class CheckoutService:
             performance_id=performance_id,
             estado=PENDIENTE,
             subtotal=subtotal,
-            cargo_servicio=cargo_servicio,
-            cargo_orden=cargos.por_orden,
+            iva=sum((p.iva for p in partidas), CERO),
             descuento=CERO,
             total=total,
             moneda=MONEDA,
             comision_pct_snap=cliente.comision_pct,
-            cargo_servicio_pct_snap=cargos.servicio_pct,
-            cargo_orden_snap=cargos.por_orden,
+            iva_pct_snap=iva.pct,
             idempotency_key=secrets.token_hex(16),
             expira_en=expira_en,
             hold_id=hold_id,

@@ -1,8 +1,8 @@
 # Palco — API de boletaje
 
 Plataforma de boletaje operada por PSD. Los organizadores venden sus
-eventos a través de ella; PSD cobra comisión al organizador y cargo por
-servicio al comprador.
+eventos a través de ella; PSD cobra una comisión al organizador. El
+comprador paga el precio del boleto, sin cargos encima.
 
 ## Arranque local
 

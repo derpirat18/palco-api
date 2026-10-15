@@ -238,8 +238,8 @@ async def crear_evento(datos: EventoCrear, db: DB, usuario: UsuarioActual) -> Ev
         descripcion=datos.descripcion,
         imagen_url=datos.imagen_url,
         destacado=datos.destacado,
-        cargo_servicio_pct=datos.cargo_servicio_pct,
-        cargo_orden=datos.cargo_orden,
+        iva_pct=datos.iva_pct,
+        precios_incluyen_iva=datos.precios_incluyen_iva,
         estado=EstadoEvento.BORRADOR,
     )
     db.add(evento)
@@ -274,6 +274,8 @@ async def actualizar_evento(
 
     if "estado" in cambios and cambios["estado"] not in {e.value for e in EstadoEvento}:
         raise ConflictoDeCatalogo(f"Estado invalido: {cambios['estado']}.")
+
+    await servicio.verificar_cambio_de_iva(evento, cambios)
 
     if "nombre" in cambios and cambios["nombre"] != evento.nombre:
         evento.slug = await servicio.slug_disponible(

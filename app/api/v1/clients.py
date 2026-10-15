@@ -26,7 +26,7 @@ router = APIRouter(prefix="/clients", tags=["organizadores"])
 solo_psd = Depends(requiere_rol(RolUsuario.ADMIN_PSD))
 
 # Campos que un organizador puede cambiar de si mismo. Todo lo demas
-# (comision, cargos, activo) es acuerdo comercial y lo mueve PSD.
+# (comision, activo) es acuerdo comercial y lo mueve PSD.
 CAMPOS_DEL_ORGANIZADOR = frozenset(
     {
         "razon_social",

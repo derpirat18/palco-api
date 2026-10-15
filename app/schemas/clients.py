@@ -11,13 +11,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-# Numeric(5,2) y Numeric(10,2) en la base. Validar aqui los decimales
-# evita que un 10.555 se redondee en silencio: sobre una comision, ese
-# redondeo se multiplica por cada boleto vendido.
+# Numeric(5,2) en la base. Validar aqui los decimales evita que un 10.555
+# se redondee en silencio: sobre una comision, ese redondeo se multiplica
+# por cada boleto vendido.
 Porcentaje = Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
-Importe = Annotated[
-    Decimal, Field(ge=0, le=Decimal("99999999.99"), max_digits=10, decimal_places=2)
-]
 
 
 class _NormalizaIdentificadores(BaseModel):
@@ -92,10 +89,8 @@ class ClienteCrear(_NormalizaIdentificadores):
     email: str | None = Field(default=None, max_length=255)
     clabe: str | None = None
 
-    # Si no se indican, aplican los valores por omision del modelo.
+    # Si no se indica, aplica el valor por omision del modelo.
     comision_pct: Porcentaje | None = None
-    cargo_servicio_pct: Porcentaje | None = None
-    cargo_orden: Importe | None = None
 
     ga_id: str | None = Field(default=None, max_length=40)
     pixel_id: str | None = Field(default=None, max_length=40)
@@ -111,8 +106,6 @@ class ClienteActualizar(_NormalizaIdentificadores):
     email: str | None = Field(default=None, max_length=255)
     clabe: str | None = None
     comision_pct: Porcentaje | None = None
-    cargo_servicio_pct: Porcentaje | None = None
-    cargo_orden: Importe | None = None
     ga_id: str | None = Field(default=None, max_length=40)
     pixel_id: str | None = Field(default=None, max_length=40)
     activo: bool | None = None
@@ -129,8 +122,6 @@ class ClienteResponse(BaseModel):
     email: str | None
     clabe: str | None
     comision_pct: Decimal
-    cargo_servicio_pct: Decimal
-    cargo_orden: Decimal
     ga_id: str | None
     pixel_id: str | None
     activo: bool
