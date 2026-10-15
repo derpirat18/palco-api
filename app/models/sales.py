@@ -127,11 +127,11 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     )
 
     # --- Importes ---
-    # El comprador paga el precio de sus boletos y nada mas: sin cargos
-    # encima (ADR 0012). La base lo exige con `total_es_el_precio`.
+    # Como en una factura: subtotal (sin IVA) + IVA - descuento = total, y
+    # la base lo exige con `total_cuadra` (ADR 0013). El total es lo que
+    # paga el comprador: el precio de sus boletos, sin cargos encima
+    # (ADR 0012).
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    # Cuanto del total es IVA, para la factura y la liquidacion. Ya esta
-    # dentro del total: no se suma (ADR 0013).
     iva: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, default=0, server_default="0"
     )
@@ -186,7 +186,7 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
             name="estado_valido",
         ),
         CheckConstraint("total >= 0", name="total_no_negativo"),
-        CheckConstraint("total = subtotal - descuento", name="total_es_el_precio"),
+        CheckConstraint("total = subtotal + iva - descuento", name="total_cuadra"),
         CheckConstraint("iva >= 0 AND iva <= total", name="iva_valido"),
         Index("ix_orders_performance_estado", "performance_id", "estado"),
         Index("ix_orders_customer", "customer_id"),

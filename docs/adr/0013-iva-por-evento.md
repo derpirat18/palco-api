@@ -50,11 +50,27 @@ Los precios de zona se guardan como los capturó el organizador; en
 
 ## La orden desglosa y congela
 
-Cada partida guarda el IVA contenido en su importe, y la orden guarda la
-suma (`orders.iva`) y la tasa del momento (`orders.iva_pct_snap`). Si el
-organizador corrige la tasa después, lo vendido no se mueve: la factura
-y la liquidación usan lo congelado. La base exige que el IVA no sea
-negativo ni mayor que el importe.
+La orden se lee como una factura: **subtotal (sin IVA) + IVA − descuento
+= total**, y la base lo exige (`ck_orders_total_cuadra`). El total es lo
+que paga el comprador y lo que cobra Stripe: la suma exacta de los
+precios al público. El IVA se desglosa partida por partida y el subtotal
+es el total menos ese IVA.
+
+| Modo, 2 × $850 al 16 % | Subtotal | IVA | Total |
+|---|---|---|---|
+| IVA incluido | 1,465.52 | 234.48 | 1,700.00 |
+| Más IVA | 1,700.00 | 272.00 | 1,972.00 |
+
+Con "más IVA", el subtotal es exactamente lo que capturó el organizador.
+
+Cada partida guarda su precio al público y el IVA que contiene; la orden
+guarda la suma (`orders.iva`) y la tasa del momento
+(`orders.iva_pct_snap`). Si el organizador corrige la tasa después, lo
+vendido no se mueve: la factura y la liquidación usan lo congelado. La
+base exige que el IVA no sea negativo ni mayor que el importe.
+
+Cuando existan códigos de descuento, el descuento tendrá que reducir la
+base y su IVA juntos; hoy siempre es cero.
 
 ## Qué se puede cambiar y cuándo
 

@@ -268,8 +268,12 @@ class CheckoutService:
             )
             for ps_id, precio, zona, fila, numero in detalle
         ]
-        subtotal = sum((p.precio_unitario for p in partidas), CERO)
-        total = subtotal
+        # Como en una factura: subtotal sin IVA + IVA = total. El total es la
+        # suma exacta de los precios al publico, que es lo que cobra Stripe;
+        # el subtotal sale de restarle el IVA desglosado partida por partida.
+        total = sum((p.importe for p in partidas), CERO)
+        iva_total = sum((p.iva for p in partidas), CERO)
+        subtotal = total - iva_total
         if total < TOTAL_MINIMO:
             raise OrdenSinCobro(
                 "Una compra con pago debe ser de al menos $10.00.",
@@ -284,7 +288,7 @@ class CheckoutService:
             performance_id=performance_id,
             estado=PENDIENTE,
             subtotal=subtotal,
-            iva=sum((p.iva for p in partidas), CERO),
+            iva=iva_total,
             descuento=CERO,
             total=total,
             moneda=MONEDA,
@@ -921,6 +925,8 @@ class CheckoutService:
                     "evento_uuid": str(evento_uuid),
                     "funcion_uuid": str(funcion_uuid),
                     "comprador_uuid": str(comprador_uuid),
+                    "subtotal": str(orden.subtotal),
+                    "iva": str(orden.iva),
                     "total": str(orden.total),
                     "moneda": orden.moneda,
                     "boletos": [str(b.uuid) for b in boletos],

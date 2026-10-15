@@ -206,10 +206,13 @@ async def test_la_orden_congela_importes_y_condiciones(
     )
     orden = iniciada.orden
 
-    # 2 x 800 y nada mas: sin cargos al comprador (ADR 0012). La comision
-    # se congela para la liquidacion del organizador; no se le cobra a el.
-    assert orden.subtotal == Decimal("1600.00")
+    # 2 x 800 y nada mas: sin cargos al comprador (ADR 0012). Como en una
+    # factura: subtotal sin IVA + IVA = total (16 % incluido, ADR 0013).
+    # La comision se congela para la liquidacion; no se le cobra a el.
     assert orden.total == Decimal("1600.00")
+    assert orden.iva == Decimal("220.68")
+    assert orden.subtotal == Decimal("1379.32")
+    assert orden.subtotal + orden.iva - orden.descuento == orden.total
     assert orden.comision_pct_snap == Decimal("10.00")
     assert orden.estado == "pendiente"
     assert orden.hold_id == hold
@@ -249,7 +252,7 @@ async def test_la_base_no_deja_cobrar_mas_que_el_precio(db, clientes):
     persona = Customer(email="cargo@correo.mx")
     db.add(persona)
     await db.flush()
-    with pytest.raises(IntegrityError, match="ck_orders_total_es_el_precio"):
+    with pytest.raises(IntegrityError, match="ck_orders_total_cuadra"):
         async with db.begin_nested():
             db.add(
                 Order(
@@ -1003,11 +1006,17 @@ async def test_checkout_por_api_y_lo_que_ve_el_comprador(
         "zona",
         "asiento",
         "precio",
+        "iva",
         "importe",
     }
     assert cuerpo["orden"]["total"] == "1600.00"
-    # 16 % incluido: de cada $800, $110.34 son IVA.
-    assert (cuerpo["orden"]["iva"], cuerpo["orden"]["iva_pct"]) == ("220.68", "16.00")
+    # 16 % incluido: de cada $800, $110.34 son IVA. Subtotal + IVA = total.
+    assert (cuerpo["orden"]["subtotal"], cuerpo["orden"]["iva"]) == (
+        "1379.32",
+        "220.68",
+    )
+    assert cuerpo["orden"]["iva_pct"] == "16.00"
+    assert cuerpo["orden"]["partidas"][0]["iva"] == "110.34"
     assert cuerpo["orden"]["descuento"] == "0.00", "mismo formato que al consultar"
     assert cuerpo["pago"] == {
         "proveedor": "stripe",

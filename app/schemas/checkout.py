@@ -34,7 +34,9 @@ class CheckoutRequest(BaseModel):
 class PartidaResponse(BaseModel):
     zona: str
     asiento: str
+    # Precio al publico de la butaca (con IVA) y cuanto de el es IVA.
     precio: Decimal
+    iva: Decimal
     importe: Decimal
 
 
@@ -43,8 +45,8 @@ class OrdenResponse(BaseModel):
     folio: str
     estado: Literal["pendiente", "pagada", "cancelada", "reembolsada", "expirada"]
     moneda: str
+    # Como en una factura: subtotal (sin IVA) + iva - descuento = total.
     subtotal: Decimal
-    # IVA contenido en el total; ya esta incluido, no se suma.
     iva: Decimal
     iva_pct: Decimal
     descuento: Decimal

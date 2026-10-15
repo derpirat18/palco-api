@@ -151,15 +151,17 @@ async def test_desde_de_la_pagina_publica_es_con_iva(cliente_http, db, clientes)
 
 
 @pytest.mark.parametrize(
-    "pct,incluido,total,iva",
+    "pct,incluido,subtotal,iva,total",
     [
-        ("16.00", True, "1600.00", "220.68"),
-        ("16.00", False, "1856.00", "256.00"),
-        ("0.00", True, "1600.00", "0.00"),
+        # 2 butacas de luneta capturadas en $800.
+        ("16.00", True, "1379.32", "220.68", "1600.00"),
+        # Mas IVA: el subtotal es justo lo que capturo el organizador.
+        ("16.00", False, "1600.00", "256.00", "1856.00"),
+        ("0.00", True, "1600.00", "0.00", "1600.00"),
     ],
 )
 async def test_la_orden_desglosa_y_congela_el_iva(
-    db, clientes, hold_service, pct, incluido, total, iva
+    db, clientes, hold_service, pct, incluido, subtotal, iva, total
 ):
     esc = await evento_con_iva(db, clientes[0].id, pct=pct, incluido=incluido)
     pid = esc["performance_id"]
@@ -186,7 +188,9 @@ async def test_la_orden_desglosa_y_congela_el_iva(
     )
 
     orden = iniciada.orden
-    assert (orden.total, orden.iva, orden.iva_pct_snap) == (D(total), D(iva), D(pct))
+    assert (orden.subtotal, orden.iva, orden.total) == (D(subtotal), D(iva), D(total))
+    assert orden.subtotal + orden.iva - orden.descuento == orden.total
+    assert orden.iva_pct_snap == D(pct)
     assert sum(p.iva for p in iniciada.partidas) == orden.iva
 
     # Cambiar la tasa despues no mueve lo vendido.

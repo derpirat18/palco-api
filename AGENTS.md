@@ -170,14 +170,15 @@ Detalle en ADR 0010. Lo que no se rompe:
 - **Fechas**: siempre `DateTime(timezone=True)`, siempre en UTC en la
   base. La conversión a hora local es del recinto (`venues.zona_horaria`).
 - **El comprador paga el precio del boleto y nada más.** Sin cargo por
-  servicio ni por orden. La base lo exige: `ck_orders_total_es_el_precio`
+  servicio ni por orden. La base lo exige: `ck_orders_total_cuadra`
   y `ck_order_items_importe_es_el_precio`. La comisión de PSD y la de
   Stripe se le descuentan al organizador en su liquidación (ADR 0012).
 - **IVA por evento** (ADR 0013): la tasa la escribe el organizador y dice
   si sus precios la incluyen o son "más IVA". El comprador ve y paga
   siempre con IVA. Todo precio capturado pasa por `venta.Iva` antes de
   llegar a una butaca o a la página pública; nunca se suma IVA a mano en
-  otro lado. Cada orden congela `iva` e `iva_pct_snap`.
+  otro lado. La orden se lee como factura: subtotal (sin IVA) + IVA −
+  descuento = total, y congela la tasa en `iva_pct_snap`.
 - **Congelar lo que se vendió**: `order_items` guarda `zona_snap` y
   `asiento_snap`; `orders` guarda `comision_pct_snap`. Las liquidaciones
   suman esos valores, **nunca** recalculan desde la configuración vigente
