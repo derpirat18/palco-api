@@ -451,6 +451,42 @@ class CheckoutService:
             )
         return orden
 
+    async def expirar(self, orden_id: int) -> Order:
+        """Cierra una orden pendiente cuyo apartado ya vencio. La usa el barrido.
+
+        Si el comprador alcanzo a autorizar, no se cierra a ciegas: se
+        intenta vender y `finalizar` decide con Redis. Si no autorizo, se
+        cancela en Stripe primero y despues se cierra. Si Stripe todavia
+        no deja cancelar (pago en proceso), se queda para la siguiente
+        vuelta: cerrar sin cancelar podria dejar un cobro sin orden.
+        """
+        orden = await self.db.scalar(
+            select(Order)
+            .where(Order.id == orden_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if orden is None or orden.estado != PENDIENTE:
+            await self.db.commit()
+            return orden
+
+        if orden.stripe_payment_intent_id:
+            intento = await self.pasarela.obtener(orden.stripe_payment_intent_id)
+            if intento.estado not in (AUTORIZADO, COBRADO, CANCELADO):
+                intento = await self.pasarela.cancelar(
+                    intento.id, idempotency_key=f"cancelar-{orden.uuid}"
+                )
+            if intento.estado in (AUTORIZADO, COBRADO):
+                await self.db.commit()
+                return await self.finalizar(orden.id)
+            if intento.estado != CANCELADO:
+                await self.db.commit()
+                return orden
+
+        await self._cerrar(orden, EXPIRADA, "apartado_vencido")
+        await self.db.commit()
+        return orden
+
     # ============================================================== privados
 
     async def _ahora(self) -> datetime:

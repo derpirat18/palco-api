@@ -1,4 +1,4 @@
-.PHONY: ayuda instalar arriba abajo migrar migracion test lint fmt correr usuario _servicios
+.PHONY: ayuda instalar arriba abajo migrar migracion test lint fmt correr barrido usuario _servicios
 
 ayuda:
 	@echo "instalar   - crea venv e instala dependencias"
@@ -7,6 +7,7 @@ ayuda:
 	@echo "migrar     - aplica migraciones pendientes"
 	@echo "migracion  - genera migracion:  make migracion m='descripcion'"
 	@echo "correr     - arranca la API en modo desarrollo"
+	@echo "barrido    - cierra apartados y ordenes vencidas, reintenta cobros (una=1: una vuelta)"
 	@echo "test       - corre las pruebas"
 	@echo "lint       - revisa estilo"
 	@echo "fmt        - formatea"
@@ -44,6 +45,9 @@ migracion: _servicios
 
 correr: _servicios
 	.venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+barrido: _servicios
+	.venv/bin/python -m app.workers.barrido $(if $(una),--una-vez,)
 
 test: _servicios
 	.venv/bin/pytest

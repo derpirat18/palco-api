@@ -120,14 +120,13 @@ importes, no correo ni teléfono.
 
 ## Lo que no es
 
-- No hay barrido todavía (#51). Hasta que exista: las órdenes pendientes
-  vencidas se cierran cuando alguien más intenta comprar esas butacas, y
-  las pagadas sin capturar se capturan cuando Stripe reintenta el
-  webhook. El barrido debe hacer las dos cosas por su cuenta.
+- El barrido (ADR 0011) cierra las órdenes pendientes vencidas y
+  termina las capturas pendientes sin esperar a que haya tráfico ni a
+  que Stripe reintente.
 - No hay publicador de la bandeja de salida: los hechos se acumulan con
   `publicado_en` nulo hasta que exista el consumidor.
 - No se envían boletos por correo; es el siguiente paso.
 - Sin códigos de descuento: `descuento` queda en cero.
 - La autorización de una tarjeta dura 7 días en Stripe. Una orden pagada
-  sin capturar más de ese tiempo pierde el cobro: el barrido debe
-  alertarla antes.
+  sin capturar más de ese tiempo pierde el cobro: el barrido la avisa a
+  los 5 días (ADR 0011).

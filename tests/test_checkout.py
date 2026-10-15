@@ -84,6 +84,10 @@ class PasarelaFalsa:
         self.cancelaciones: list[str] = []
         self.falla_captura: Exception | None = None
         self.falla_obtener: Exception | None = None
+        # Para simular fallas de un solo pago, no de todos.
+        self.falla_obtener_para: set[str] = set()
+        # Como un pago en proceso: Stripe no deja cancelarlo todavia.
+        self.cancelacion_bloqueada = False
         self._real = StripePasarela("sk_test_x", SECRETO)
 
     async def crear_intento(
@@ -112,6 +116,8 @@ class PasarelaFalsa:
     async def obtener(self, intento_id: str) -> IntentoDePago:
         if self.falla_obtener:
             raise self.falla_obtener
+        if intento_id in self.falla_obtener_para:
+            raise PasarelaNoDisponible("Stripe no responde para este pago")
         return self.intentos[intento_id]
 
     async def capturar(self, intento_id: str, *, idempotency_key: str):
@@ -127,6 +133,8 @@ class PasarelaFalsa:
         return self.intentos[intento_id]
 
     async def cancelar(self, intento_id: str, *, idempotency_key: str):
+        if self.cancelacion_bloqueada:
+            return self.intentos[intento_id]
         if self.intentos[intento_id].estado not in (COBRADO, CANCELADO):
             self.poner(intento_id, estado=CANCELADO)
             self.cancelaciones.append(intento_id)

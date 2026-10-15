@@ -12,7 +12,7 @@
 #>
 param(
   [Parameter(Position = 0)]
-  [ValidateSet('ayuda','instalar','arriba','abajo','migrar','migracion','correr','test','lint','fmt','usuario')]
+  [ValidateSet('ayuda','instalar','arriba','abajo','migrar','migracion','correr','barrido','test','lint','fmt','usuario')]
   [string]$Tarea = 'ayuda',
 
   [Alias('m')]
@@ -23,7 +23,10 @@ param(
   [string]$Email,
   [string]$Nombre,
   [string]$Rol,
-  [int]$Cliente = 0
+  [int]$Cliente = 0,
+
+  # Solo para la tarea 'barrido': una vuelta y termina.
+  [switch]$UnaVez
 )
 
 $ErrorActionPreference = 'Stop'
@@ -77,6 +80,7 @@ switch ($Tarea) {
     Write-Host "  migrar     " -NoNewline -ForegroundColor Cyan; Write-Host "aplica migraciones pendientes"
     Write-Host "  migracion  " -NoNewline -ForegroundColor Cyan; Write-Host "genera migracion:  .\make.ps1 migracion -m 'descripcion'"
     Write-Host "  correr     " -NoNewline -ForegroundColor Cyan; Write-Host "arranca la API en http://localhost:8000"
+    Write-Host "  barrido    " -NoNewline -ForegroundColor Cyan; Write-Host "cierra apartados y ordenes vencidas, reintenta cobros (-UnaVez: una vuelta)"
     Write-Host "  test       " -NoNewline -ForegroundColor Cyan; Write-Host "corre las pruebas"
     Write-Host "  lint       " -NoNewline -ForegroundColor Cyan; Write-Host "revisa estilo"
     Write-Host "  fmt        " -NoNewline -ForegroundColor Cyan; Write-Host "formatea"
@@ -176,6 +180,16 @@ switch ($Tarea) {
     Requiere-Venv
     Requiere-Servicios
     & $py -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+  }
+
+  'barrido' {
+    Requiere-Venv
+    Requiere-Servicios
+    if ($UnaVez) {
+      & $py -m app.workers.barrido --una-vez
+    } else {
+      & $py -m app.workers.barrido
+    }
   }
 
   'test' {

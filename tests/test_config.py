@@ -83,6 +83,9 @@ def test_rechaza_las_llaves_de_stripe_de_ejemplo(campo, relleno):
     with pytest.raises(ValidationError) as exc:
         construir(SECRET_KEY=LLAVE_A, TICKET_SIGNING_KEY=LLAVE_B, **{campo: relleno})
     assert campo in str(exc.value)
+    # Cada llave dice de donde sale: la del webhook no esta en API keys.
+    donde = "stripe listen" if campo == "STRIPE_WEBHOOK_SECRET" else "API keys"
+    assert donde in str(exc.value)
 
 
 def test_stripe_vacio_o_real_si_arranca():

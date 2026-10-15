@@ -96,10 +96,15 @@ class Settings(BaseSettings):
         claramente que falta configurar Stripe.
         """
         if valor.strip().lower().endswith("_xxx"):
+            donde = (
+                "la configuracion del webhook en Stripe, o la que imprime "
+                "`stripe listen`"
+                if info.field_name == "STRIPE_WEBHOOK_SECRET"
+                else "tu panel de Stripe (Developers -> API keys)"
+            )
             raise ValueError(
                 f"{info.field_name} sigue con el valor de ejemplo de "
-                ".env.example. Pon la llave de prueba de tu panel de Stripe "
-                "(Developers -> API keys) o deja la variable vacia."
+                f".env.example. Pon la de {donde}, o deja la variable vacia."
             )
         return valor.strip()
 

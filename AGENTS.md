@@ -62,11 +62,13 @@ revisan con lupa:
 - `app/models/inventory.py`
 - `app/services/checkout.py`, `app/services/pasarela.py` y
   `app/services/webhooks.py`: cobro y emisión (ADR 0010)
+- `app/services/barrido.py`: cierra órdenes, suelta apartados y termina
+  capturas sin que nadie lo vea (ADR 0011)
 - Cualquier cosa que toque cobros o emisión de boletos
 
 Nunca debilitar ni marcar como `skip` las pruebas de
 `tests/test_holds_concurrency.py`, `tests/test_apartados.py`,
-`tests/test_checkout.py` ni `tests/test_auth.py`. Si una falla,
+`tests/test_checkout.py`, `tests/test_barrido.py` ni `tests/test_auth.py`. Si una falla,
 el bug está en el código.
 
 ## Cómo funciona el apartado de butacas
@@ -156,6 +158,10 @@ Detalle en ADR 0010. Lo que no se rompe:
   sistema directo desde el checkout.
 - Toda llamada a Stripe lleva llave de idempotencia derivada del `uuid`
   de la orden (`orden-`, `capturar-`, `cancelar-`).
+- El barrido (`.\make.ps1 barrido`) termina lo que queda a medias:
+  órdenes vencidas, apartados vencidos, capturas pendientes y avisos de
+  capturas atrasadas. Nunca cierra una orden sin cancelar antes en
+  Stripe, y nunca suelta una butaca que Redis siga dando por apartada.
 
 ## Reglas de datos
 
