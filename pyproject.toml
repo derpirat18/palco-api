@@ -15,7 +15,7 @@ dependencies = [
     "redis>=5.2",
     "python-jose[cryptography]>=3.3",
     "passlib[bcrypt]>=1.7",
-    "stripe>=11.0",
+    "stripe>=16.0",
     "httpx>=0.28",
     "phonenumbers>=8.13",
 ]

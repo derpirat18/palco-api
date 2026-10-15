@@ -117,7 +117,7 @@ class ApartadoService:
             raise LimiteDeAsientos("Hay butacas repetidas en la solicitud.")
 
         ahora = await self._ahora()
-        await self._funcion_a_la_venta(performance_id, ahora)
+        await self.funcion_a_la_venta(performance_id, ahora)
 
         filas = {
             f.seat_id: f
@@ -146,7 +146,7 @@ class ApartadoService:
 
         await self._verificar_tope(performance_id, seat_ids, hold_id, ahora)
 
-        suelta = await self._butaca_que_quedaria_suelta(
+        suelta = await self.butaca_que_quedaria_suelta(
             performance_id, seat_ids, hold_id, ahora
         )
         if suelta is not None:
@@ -295,7 +295,14 @@ class ApartadoService:
         """
         return await self.db.scalar(select(func.now()))
 
-    async def _funcion_a_la_venta(self, performance_id: int, ahora: datetime) -> None:
+    async def funcion_a_la_venta(
+        self, performance_id: int, ahora: datetime
+    ) -> tuple[Performance, Event, Client]:
+        """La funcion con su evento y organizador, si hoy se le puede comprar.
+
+        La usan el apartado y el checkout: las dos puertas a la venta
+        aplican exactamente la misma regla.
+        """
         fila = (
             await self.db.execute(
                 select(Performance, Event, Client)
@@ -316,6 +323,7 @@ class ApartadoService:
             raise FuncionNoALaVenta(
                 mensaje, {"performance_id": performance_id, **detalle}
             )
+        return fila[0], fila[1], fila[2]
 
     @staticmethod
     def _apartable(fila: PerformanceSeat, hold_id: str, ahora: datetime) -> bool:
@@ -323,7 +331,7 @@ class ApartadoService:
             fila.estado, fila.hold_id, fila.hold_expira_en, hold_id, ahora
         )
 
-    async def _butaca_que_quedaria_suelta(
+    async def butaca_que_quedaria_suelta(
         self,
         performance_id: int,
         seat_ids: list[int],

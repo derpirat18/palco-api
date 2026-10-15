@@ -60,11 +60,13 @@ revisan con lupa:
 - `app/services/venta.py`: cuándo una función se vende y cuánto cuesta con
   cargos. La usan la página pública, el apartado y el cobro
 - `app/models/inventory.py`
+- `app/services/checkout.py`, `app/services/pasarela.py` y
+  `app/services/webhooks.py`: cobro y emisión (ADR 0010)
 - Cualquier cosa que toque cobros o emisión de boletos
 
 Nunca debilitar ni marcar como `skip` las pruebas de
-`tests/test_holds_concurrency.py`, `tests/test_apartados.py` ni
-`tests/test_auth.py`. Si una falla,
+`tests/test_holds_concurrency.py`, `tests/test_apartados.py`,
+`tests/test_checkout.py` ni `tests/test_auth.py`. Si una falla,
 el bug está en el código.
 
 ## Cómo funciona el apartado de butacas
@@ -139,6 +141,21 @@ apartar (Redis) → autorizar en Stripe (captura manual)
 El orden importa. Con captura manual, si se pierde la butaca se cancela
 la autorización y el comprador nunca ve un cargo. Un reembolso tarda
 días; cancelar una autorización es inmediato.
+
+Detalle en ADR 0010. Lo que no se rompe:
+
+- Webhook y `POST /ordenes/{uuid}/confirmar` llaman a la misma
+  `finalizar`, idempotente. El webhook no se cree: se consulta a Stripe.
+- Entre emitir boletos y capturar hay un `commit`. Así, si la captura
+  falla, los boletos existen y se sabe qué deshacer.
+- Error **transitorio** de Stripe: la orden queda pagada sin capturar y
+  se reintenta. Nunca se cancelan boletos por un error de red. Solo un
+  rechazo **definitivo** deshace la venta.
+- Los hechos de negocio (`orden.pagada`, `orden.cancelada`) se escriben
+  en `outbox_events` en la misma transacción. Nunca se avisa a otro
+  sistema directo desde el checkout.
+- Toda llamada a Stripe lleva llave de idempotencia derivada del `uuid`
+  de la orden (`orden-`, `capturar-`, `cancelar-`).
 
 ## Reglas de datos
 
@@ -218,8 +235,9 @@ en toda la API.
 ## Lo que no se hace
 
 - Credenciales o llaves en el código. Todo por variable de entorno.
-- Datos de tarjeta tocando nuestros servidores. Checkout alojado de
-  Stripe.
+- Datos de tarjeta tocando nuestros servidores. La tarjeta se captura
+  en el formulario de Stripe (Payment Element) dentro de la página; a
+  nosotros solo llega el resultado.
 - `SELECT ... FOR UPDATE` para apartar butacas. Serializa y tumba el
   pool de conexiones bajo carga.
 - Borrar apartados con `DEL` a ciegas. Siempre verificar propiedad

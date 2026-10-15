@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # --- Stripe ---
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+    # La publica (pk_test_/pk_live_) la necesita el front para montar el
+    # formulario de tarjeta. Se entrega en la respuesta del checkout para
+    # que el front no la tenga escrita en su codigo.
+    STRIPE_PUBLISHABLE_KEY: str = ""
 
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]

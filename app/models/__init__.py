@@ -22,6 +22,7 @@ from app.models.commerce import (
     SettlementItem,
 )
 from app.models.inventory import InventoryMove, PerformanceSeat
+from app.models.outbox import OutboxEvent
 from app.models.payments import PaymentEvent
 from app.models.sales import (
     AccessDevice,
@@ -47,6 +48,7 @@ __all__ = [
     "InventoryMove",
     "Order",
     "OrderItem",
+    "OutboxEvent",
     "PaymentEvent",
     "Performance",
     "PerformancePrice",

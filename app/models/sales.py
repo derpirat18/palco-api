@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -156,7 +157,17 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
         String(64), nullable=False, unique=True
     )
     pagada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Pagada y capturada no son lo mismo: los boletos se emiten antes de
+    # capturar (ADR 0010). Una orden pagada sin captura es una que hay que
+    # reintentar capturar, no una venta perdida.
+    capturada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expira_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Apartado del que salio la orden. Nulo en ventas que no pasan por
+    # apartado (taquilla, cortesias).
+    hold_id: Mapped[str | None] = mapped_column(String(40))
+    # Por que se cerro sin cobrarse: apartado_vencido, reemplazada,
+    # pago_cancelado, captura_rechazada...
+    cerrada_motivo: Mapped[str | None] = mapped_column(String(40))
 
     # --- Atribucion ---
     utm_source: Mapped[str | None] = mapped_column(String(120))
@@ -176,6 +187,22 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
         CheckConstraint("total >= 0", name="total_no_negativo"),
         Index("ix_orders_performance_estado", "performance_id", "estado"),
         Index("ix_orders_customer", "customer_id"),
+        # Un apartado, a lo mas una orden esperando pago. Dos ordenes vivas
+        # sobre el mismo apartado son dos cobros posibles por las mismas
+        # butacas.
+        Index(
+            "uq_orders_hold_pendiente",
+            "hold_id",
+            unique=True,
+            postgresql_where=text("estado = 'pendiente'"),
+        ),
+        # El webhook llega con el PaymentIntent, no con la orden.
+        Index(
+            "uq_orders_payment_intent",
+            "stripe_payment_intent_id",
+            unique=True,
+            postgresql_where=text("stripe_payment_intent_id IS NOT NULL"),
+        ),
     )
 
 
