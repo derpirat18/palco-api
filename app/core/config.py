@@ -84,6 +84,25 @@ class Settings(BaseSettings):
             )
         return valor
 
+    @field_validator(
+        "STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_WEBHOOK_SECRET"
+    )
+    @classmethod
+    def _rechazar_relleno_de_stripe(cls, valor: str, info) -> str:
+        """`sk_test_xxx` de .env.example parece una llave y no lo es.
+
+        Con el relleno la app arranca y el primer cobro falla con un 502
+        que no dice por que. Vacia, la app arranca y el checkout dice
+        claramente que falta configurar Stripe.
+        """
+        if valor.strip().lower().endswith("_xxx"):
+            raise ValueError(
+                f"{info.field_name} sigue con el valor de ejemplo de "
+                ".env.example. Pon la llave de prueba de tu panel de Stripe "
+                "(Developers -> API keys) o deja la variable vacia."
+            )
+        return valor.strip()
+
     @model_validator(mode="after")
     def _llaves_distintas(self) -> "Settings":
         """Una sola llave para sesiones y boletos acopla dos riesgos.

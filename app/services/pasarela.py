@@ -19,6 +19,7 @@ boletos ya emitidos de alguien que si pago.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -26,6 +27,8 @@ import stripe
 
 from app.core.config import settings
 from app.core.errors import ErrorDeDominio
+
+log = logging.getLogger("palco.pasarela")
 
 # Estados de un PaymentIntent que importan aqui.
 AUTORIZADO = "requires_capture"
@@ -103,6 +106,17 @@ def _transitorio(exc: stripe.StripeError) -> bool:
     )
 
 
+def _anotar(operacion: str, exc: stripe.StripeError) -> None:
+    """Deja en el log lo que dijo Stripe, que al comprador no se le muestra.
+
+    Sin esto, un 502 no dice si fue la red, la llave o un parametro que
+    Stripe dejo de aceptar. El mensaje de Stripe trae el id de la peticion
+    (req_...) para buscarla en su panel, y nunca incluye la llave.
+    """
+    nivel = logging.WARNING if _transitorio(exc) else logging.ERROR
+    log.log(nivel, "Stripe al %s: %s: %s", operacion, type(exc).__name__, exc)
+
+
 def _intento(pi) -> IntentoDePago:
     return IntentoDePago(
         id=pi.id,
@@ -170,14 +184,17 @@ class StripePasarela:
                     "capture_method": "manual",
                     # Solo tarjeta. OXXO y SPEI se pagan horas o dias
                     # despues y no admiten captura manual: no caben en un
-                    # apartado de minutos.
-                    "payment_method_types": ["card"],
+                    # apartado de minutos. Desde la API 2026-09-30 ya no
+                    # existe `payment_method_types`; este es su reemplazo,
+                    # y Stripe descarta solo lo que no sea compatible.
+                    "allowed_payment_method_types": ["card"],
                     "description": descripcion,
                     "metadata": metadata,
                 },
                 {"idempotency_key": idempotency_key},
             )
         except stripe.StripeError as exc:
+            _anotar("crear", exc)
             raise PasarelaNoDisponible(
                 "No pudimos iniciar el pago. Intenta de nuevo en un momento."
             ) from exc
@@ -187,6 +204,7 @@ class StripePasarela:
         try:
             pi = await self._intentos().retrieve_async(intento_id)
         except stripe.StripeError as exc:
+            _anotar("consultar", exc)
             raise PasarelaNoDisponible("No pudimos consultar el pago.") from exc
         return _intento(pi)
 
@@ -196,6 +214,7 @@ class StripePasarela:
                 intento_id, options={"idempotency_key": idempotency_key}
             )
         except stripe.StripeError as exc:
+            _anotar("capturar", exc)
             if _transitorio(exc):
                 raise PasarelaNoDisponible("No pudimos capturar el pago.") from exc
             # Stripe se nego. Puede ser que ya estaba capturado (reintento
@@ -215,6 +234,7 @@ class StripePasarela:
                 intento_id, options={"idempotency_key": idempotency_key}
             )
         except stripe.StripeError as exc:
+            _anotar("cancelar", exc)
             if _transitorio(exc):
                 raise PasarelaNoDisponible("No pudimos cancelar el pago.") from exc
             # Ya cancelado, ya cobrado, o en proceso: quien llama decide

@@ -68,3 +68,30 @@ def test_url_async_y_sync_apuntan_a_la_misma_base():
     assert s.db_url_sync.startswith("postgresql://")
     assert s.db_url_sync.endswith("/palco_dev")
     assert s.db_url_async.endswith("/palco_dev")
+
+
+@pytest.mark.parametrize(
+    "campo,relleno",
+    [
+        ("STRIPE_SECRET_KEY", "sk_test_xxx"),
+        ("STRIPE_PUBLISHABLE_KEY", "pk_test_xxx"),
+        ("STRIPE_WEBHOOK_SECRET", "whsec_xxx"),
+    ],
+)
+def test_rechaza_las_llaves_de_stripe_de_ejemplo(campo, relleno):
+    """Con el relleno la app arrancaba y el primer cobro daba un 502 mudo."""
+    with pytest.raises(ValidationError) as exc:
+        construir(SECRET_KEY=LLAVE_A, TICKET_SIGNING_KEY=LLAVE_B, **{campo: relleno})
+    assert campo in str(exc.value)
+
+
+def test_stripe_vacio_o_real_si_arranca():
+    """Vacio es valido: quien no trabaja en pagos no necesita llaves."""
+    vacio = construir(SECRET_KEY=LLAVE_A, TICKET_SIGNING_KEY=LLAVE_B)
+    real = construir(
+        SECRET_KEY=LLAVE_A,
+        TICKET_SIGNING_KEY=LLAVE_B,
+        STRIPE_SECRET_KEY=" sk_test_51Abc ",
+    )
+    assert vacio.STRIPE_SECRET_KEY == ""
+    assert real.STRIPE_SECRET_KEY == "sk_test_51Abc"

@@ -101,7 +101,10 @@ async def test_crear_intento_autoriza_sin_cobrar_y_es_idempotente():
     assert "capture_method=manual" in cuerpo
     assert "amount=181000" in cuerpo
     assert "currency=mxn" in cuerpo
-    assert "payment_method_types[0]=card" in cuerpo
+    # Desde la API 2026-09-30 `payment_method_types` responde 400.
+    assert "allowed_payment_method_types[0]=card" in cuerpo
+    assert "&payment_method_types" not in cuerpo
+    assert not cuerpo.startswith("payment_method_types")
     assert r.client_secret == "pi_123_secret_abc"
     assert r.moneda == "MXN"
     assert r.metadata == {"orden_uuid": "u-1"}
@@ -157,6 +160,23 @@ async def test_stripe_caido_es_transitorio_nunca_rechazo():
 
     with pytest.raises(PasarelaNoDisponible):
         await p.capturar("pi_123", idempotency_key="capturar-u-1")
+
+
+@pytest.mark.asyncio
+async def test_lo_que_dice_stripe_queda_en_el_log(caplog):
+    """Un 502 sin motivo en el log no se puede diagnosticar."""
+    p, _ = pasarela([(400, error_de_stripe("parametro que ya no existe"))])
+
+    with pytest.raises(PasarelaNoDisponible):
+        await p.crear_intento(
+            monto_centavos=1000,
+            moneda="MXN",
+            descripcion="x",
+            metadata={},
+            idempotency_key="k",
+        )
+    assert "parametro que ya no existe" in caplog.text
+    assert "sk_test_x" not in caplog.text
 
 
 @pytest.mark.asyncio

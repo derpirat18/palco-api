@@ -982,6 +982,7 @@ async def test_checkout_por_api_y_lo_que_ve_el_comprador(
         "importe",
     }
     assert cuerpo["orden"]["total"] == "1810.00"
+    assert cuerpo["orden"]["descuento"] == "0.00", "mismo formato que al consultar"
     assert cuerpo["pago"] == {
         "proveedor": "stripe",
         "client_secret": "pi_1_secret_x",

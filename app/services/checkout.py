@@ -70,6 +70,8 @@ from app.services.pasarela import (
 from app.services.venta import CENTAVO, cargos_de
 
 MONEDA = "MXN"
+# Con centavos: la respuesta siempre dice "0.00", igual que lo leido de la base.
+CERO = Decimal("0.00")
 # Stripe no acepta cobros menores a 10 pesos. Una orden en cero es una
 # cortesia y va por otro camino.
 TOTAL_MINIMO = Decimal("10.00")
@@ -259,12 +261,12 @@ class CheckoutService:
                     asiento_snap=f"Fila {fila} · {numero}",
                     precio_unitario=precio,
                     cargo_servicio=con_cargo - precio,
-                    descuento=Decimal("0"),
+                    descuento=CERO,
                     importe=con_cargo,
                 )
             )
-        subtotal = sum((p.precio_unitario for p in partidas), Decimal("0"))
-        cargo_servicio = sum((p.cargo_servicio for p in partidas), Decimal("0"))
+        subtotal = sum((p.precio_unitario for p in partidas), CERO)
+        cargo_servicio = sum((p.cargo_servicio for p in partidas), CERO)
         total = subtotal + cargo_servicio + cargos.por_orden
         if total < TOTAL_MINIMO:
             raise OrdenSinCobro(
@@ -282,7 +284,7 @@ class CheckoutService:
             subtotal=subtotal,
             cargo_servicio=cargo_servicio,
             cargo_orden=cargos.por_orden,
-            descuento=Decimal("0"),
+            descuento=CERO,
             total=total,
             moneda=MONEDA,
             comision_pct_snap=cliente.comision_pct,
