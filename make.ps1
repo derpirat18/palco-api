@@ -12,7 +12,7 @@
 #>
 param(
   [Parameter(Position = 0)]
-  [ValidateSet('ayuda','instalar','arriba','abajo','migrar','migracion','correr','barrido','test','lint','fmt','usuario')]
+  [ValidateSet('ayuda','instalar','arriba','abajo','migrar','migracion','correr','barrido','bandeja','test','lint','fmt','usuario')]
   [string]$Tarea = 'ayuda',
 
   [Alias('m')]
@@ -25,7 +25,7 @@ param(
   [string]$Rol,
   [int]$Cliente = 0,
 
-  # Solo para la tarea 'barrido': una vuelta y termina.
+  # Solo para las tareas 'barrido' y 'bandeja': una vuelta y termina.
   [switch]$UnaVez
 )
 
@@ -75,12 +75,13 @@ switch ($Tarea) {
   'ayuda' {
     Write-Host ""
     Write-Host "  instalar   " -NoNewline -ForegroundColor Cyan; Write-Host "crea el entorno virtual e instala dependencias"
-    Write-Host "  arriba     " -NoNewline -ForegroundColor Cyan; Write-Host "levanta Postgres y Redis en Docker"
+    Write-Host "  arriba     " -NoNewline -ForegroundColor Cyan; Write-Host "levanta Postgres, Redis y el buzon de pruebas en Docker"
     Write-Host "  abajo      " -NoNewline -ForegroundColor Cyan; Write-Host "detiene los servicios"
     Write-Host "  migrar     " -NoNewline -ForegroundColor Cyan; Write-Host "aplica migraciones pendientes"
     Write-Host "  migracion  " -NoNewline -ForegroundColor Cyan; Write-Host "genera migracion:  .\make.ps1 migracion -m 'descripcion'"
     Write-Host "  correr     " -NoNewline -ForegroundColor Cyan; Write-Host "arranca la API en http://localhost:8000"
     Write-Host "  barrido    " -NoNewline -ForegroundColor Cyan; Write-Host "cierra apartados y ordenes vencidas, reintenta cobros (-UnaVez: una vuelta)"
+    Write-Host "  bandeja    " -NoNewline -ForegroundColor Cyan; Write-Host "manda los correos con boletos; se ven en http://localhost:8025 (-UnaVez: una vuelta)"
     Write-Host "  test       " -NoNewline -ForegroundColor Cyan; Write-Host "corre las pruebas"
     Write-Host "  lint       " -NoNewline -ForegroundColor Cyan; Write-Host "revisa estilo"
     Write-Host "  fmt        " -NoNewline -ForegroundColor Cyan; Write-Host "formatea"
@@ -189,6 +190,16 @@ switch ($Tarea) {
       & $py -m app.workers.barrido --una-vez
     } else {
       & $py -m app.workers.barrido
+    }
+  }
+
+  'bandeja' {
+    Requiere-Venv
+    Requiere-Servicios
+    if ($UnaVez) {
+      & $py -m app.workers.bandeja --una-vez
+    } else {
+      & $py -m app.workers.bandeja
     }
   }
 

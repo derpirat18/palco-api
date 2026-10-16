@@ -12,9 +12,11 @@ Requiere Python 3.12+ y Docker Desktop.
 
 ```powershell
 .\make.ps1 instalar   # venv + dependencias + .env
-.\make.ps1 arriba     # Postgres y Redis
+.\make.ps1 arriba     # Postgres, Redis y el buzon de pruebas
 .\make.ps1 migrar     # esquema
 .\make.ps1 correr     # API en http://localhost:8000
+.\make.ps1 barrido    # en otra ventana: cierra lo vencido
+.\make.ps1 bandeja    # en otra ventana: manda los correos
 ```
 
 **macOS y Linux:**
@@ -26,7 +28,9 @@ make migrar
 make correr
 ```
 
-Documentación interactiva en `http://localhost:8000/docs`.
+Documentación interactiva en `http://localhost:8000/docs`. Los correos
+que manda la app en local no salen a internet: se ven en el buzón de
+pruebas, `http://localhost:8025`.
 
 El contenedor de Postgres crea dos bases la primera vez que arranca:
 `palco_dev` para desarrollo y `palco_test` para las pruebas. Si ya tenías

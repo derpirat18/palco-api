@@ -1,13 +1,14 @@
-.PHONY: ayuda instalar arriba abajo migrar migracion test lint fmt correr barrido usuario _servicios
+.PHONY: ayuda instalar arriba abajo migrar migracion test lint fmt correr barrido bandeja usuario _servicios
 
 ayuda:
 	@echo "instalar   - crea venv e instala dependencias"
-	@echo "arriba     - levanta Postgres y Redis (docker compose)"
+	@echo "arriba     - levanta Postgres, Redis y el buzon de pruebas (docker compose)"
 	@echo "abajo      - detiene los servicios"
 	@echo "migrar     - aplica migraciones pendientes"
 	@echo "migracion  - genera migracion:  make migracion m='descripcion'"
 	@echo "correr     - arranca la API en modo desarrollo"
 	@echo "barrido    - cierra apartados y ordenes vencidas, reintenta cobros (una=1: una vuelta)"
+	@echo "bandeja    - manda los correos con boletos; se ven en http://localhost:8025 (una=1)"
 	@echo "test       - corre las pruebas"
 	@echo "lint       - revisa estilo"
 	@echo "fmt        - formatea"
@@ -48,6 +49,9 @@ correr: _servicios
 
 barrido: _servicios
 	.venv/bin/python -m app.workers.barrido $(if $(una),--una-vez,)
+
+bandeja: _servicios
+	.venv/bin/python -m app.workers.bandeja $(if $(una),--una-vez,)
 
 test: _servicios
 	.venv/bin/pytest

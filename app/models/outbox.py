@@ -38,6 +38,8 @@ class OutboxEvent(Base, PKMixin, UUIDPublicoMixin):
     publicado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     intentos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     ultimo_error: Mapped[str | None] = mapped_column(Text)
+    # Tras un fallo, no antes de esta hora (espera creciente, ADR 0015).
+    reintentar_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         # Lo que el publicador busca: lo pendiente, en orden.

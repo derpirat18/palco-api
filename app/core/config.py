@@ -68,6 +68,20 @@ class Settings(BaseSettings):
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
+    # --- Front ---
+    # Base de los enlaces que salen en correos ("Ver mis boletos").
+    FRONT_URL: str = "http://localhost:5173"
+
+    # --- Correo (ADR 0015) ---
+    # SMTP sirve igual para el buzon local (Mailpit, puerto 1025, sin
+    # usuario) que para Amazon SES (puerto 587, STARTTLS, usuario SMTP).
+    CORREO_SMTP_HOST: str = "localhost"
+    CORREO_SMTP_PUERTO: int = 1025
+    CORREO_SMTP_USUARIO: str = ""
+    CORREO_SMTP_PASSWORD: str = ""
+    CORREO_SMTP_STARTTLS: bool = False
+    CORREO_REMITENTE: str = "Palco <boletos@palco.local>"
+
     @field_validator("SECRET_KEY", "TICKET_SIGNING_KEY")
     @classmethod
     def _rechazar_relleno(cls, valor: str, info) -> str:
@@ -119,6 +133,20 @@ class Settings(BaseSettings):
             raise ValueError(
                 "SECRET_KEY y TICKET_SIGNING_KEY deben ser distintas. "
                 f"{COMO_GENERAR_LLAVE}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _correo_cifrado_fuera_de_local(self) -> "Settings":
+        """Fuera de local el correo lleva datos del comprador y sus boletos.
+
+        Mandarlo sin cifrar al proveedor expone el QR a cualquiera en la
+        red. En local se permite porque el buzon de pruebas no cifra.
+        """
+        if self.ENTORNO != "local" and not self.CORREO_SMTP_STARTTLS:
+            raise ValueError(
+                "Fuera de ENTORNO=local el correo debe ir cifrado: "
+                "CORREO_SMTP_STARTTLS=true."
             )
         return self
 

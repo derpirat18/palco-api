@@ -18,6 +18,10 @@ dependencies = [
     "stripe>=16.0",
     "httpx>=0.28",
     "phonenumbers>=8.13",
+    # QR de los boletos en el correo; Python puro, sin dependencias.
+    "segno>=1.6",
+    # Zonas horarias en Windows, que no trae la base de datos de zonas.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

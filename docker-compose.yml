@@ -26,6 +26,12 @@ services:
       interval: 5s
       retries: 10
 
+  # Buzon de pruebas: atrapa todo correo que manda la app y lo muestra en
+  # http://localhost:8025. Nada sale a internet.
+  mailpit:
+    image: axllent/mailpit:v1.20.5
+    ports: ["1025:1025", "8025:8025"]
+
 volumes:
   pgdata:
   redisdata:
