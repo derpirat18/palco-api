@@ -17,9 +17,18 @@ from uuid import UUID
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import EVENTO_NO_EXISTE, RecursoNoEncontrado
+from app.core.errors import EVENTO_NO_EXISTE, FUNCION_NO_EXISTE, RecursoNoEncontrado
 from app.models.base import EstadoAsiento, EstadoFuncion
-from app.models.catalog import Client, Event, Performance, PerformancePrice, Venue
+from app.models.catalog import (
+    Client,
+    Event,
+    Performance,
+    PerformancePrice,
+    Seat,
+    SeatMap,
+    Venue,
+    Zone,
+)
 from app.models.inventory import PerformanceSeat
 from app.services.venta import iva_de, motivo_no_se_vende, visible_al_publico
 
@@ -82,6 +91,37 @@ class EventoPublico:
     recinto: RecintoPublico
     medicion: MedicionPublica
     funciones: tuple[FuncionPublica, ...]
+
+
+@dataclass(frozen=True)
+class ZonaDelMapa:
+    id: int
+    nombre: str
+    color: str | None
+    # La butaca libre mas barata de la zona; None si no queda ninguna.
+    precio_desde: Decimal | None
+
+
+@dataclass(frozen=True)
+class ButacaDelMapa:
+    id: int
+    zona_id: int
+    fila: str
+    numero: str
+    x: Decimal
+    y: Decimal
+    # libre | ocupada. Ocupada no dice si se vendio, esta apartada o
+    # bloqueada: al comprador no le sirve y a la competencia si.
+    estado: str
+    precio: Decimal
+
+
+@dataclass(frozen=True)
+class MapaPublico:
+    funcion: FuncionPublica
+    viewport: dict
+    zonas: tuple[ZonaDelMapa, ...]
+    butacas: tuple[ButacaDelMapa, ...]
 
 
 @dataclass(frozen=True)
@@ -157,6 +197,117 @@ class PublicoService:
                 )
                 for f in funciones
             ),
+        )
+
+    async def mapa_de_funcion(self, performance_id: int) -> MapaPublico:
+        """El mapa que pinta el front: cada butaca con su precio y si esta libre.
+
+        "Libre" es exactamente lo que el apartado deja pasar (disponible, o
+        apartada con el apartado vencido), asi que lo que aqui se ve libre
+        se puede apartar. Las butacas en kill no se envian: para el
+        comprador no existen.
+
+        Funcion cancelada, realizada, ya empezada, o de un evento que no es
+        publico: 404, igual que si no existiera.
+        """
+        fila = (
+            await self.db.execute(
+                select(Performance, Event, Client, SeatMap)
+                .join(Event, Event.id == Performance.event_id)
+                .join(Client, Client.id == Event.client_id)
+                .join(SeatMap, SeatMap.id == Performance.seat_map_id)
+                .where(Performance.id == performance_id)
+            )
+        ).first()
+        ahora: datetime = await self.db.scalar(select(func.now()))
+        if (
+            fila is None
+            or not visible_al_publico(fila[1], fila[2])
+            or fila[0].estado in NO_SE_MUESTRAN
+            or fila[0].inicia_en <= ahora
+        ):
+            raise RecursoNoEncontrado(FUNCION_NO_EXISTE)
+        funcion, _, _, mapa = fila
+
+        inventario = await self._inventario([funcion.id])
+        publica = self._funcion_publica(
+            funcion, ahora, inventario.get(funcion.id), None
+        )
+
+        zonas = (
+            await self.db.scalars(
+                select(Zone).where(Zone.seat_map_id == mapa.id).order_by(Zone.orden)
+            )
+        ).all()
+        libre = or_(
+            PerformanceSeat.estado == EstadoAsiento.DISPONIBLE.value,
+            and_(
+                PerformanceSeat.estado == EstadoAsiento.APARTADO.value,
+                PerformanceSeat.hold_expira_en <= func.now(),
+            ),
+        )
+        filas = (
+            await self.db.execute(
+                select(
+                    Seat.id,
+                    Seat.zone_id,
+                    Seat.fila,
+                    Seat.numero,
+                    Seat.pos_x,
+                    Seat.pos_y,
+                    PerformanceSeat.precio_final,
+                    libre,
+                )
+                .join(PerformanceSeat, PerformanceSeat.seat_id == Seat.id)
+                .where(
+                    PerformanceSeat.performance_id == funcion.id,
+                    PerformanceSeat.estado != EstadoAsiento.KILL.value,
+                )
+                .order_by(Seat.zone_id, Seat.fila, Seat.id)
+            )
+        ).all()
+        butacas = tuple(
+            ButacaDelMapa(
+                id=sid,
+                zona_id=zid,
+                fila=f,
+                numero=n,
+                x=x,
+                y=y,
+                estado="libre" if es_libre else "ocupada",
+                precio=precio,
+            )
+            for sid, zid, f, n, x, y, precio, es_libre in filas
+        )
+        desde: dict[int, Decimal] = {}
+        for b in butacas:
+            if b.estado == "libre" and (
+                b.zona_id not in desde or b.precio < desde[b.zona_id]
+            ):
+                desde[b.zona_id] = b.precio
+
+        return MapaPublico(
+            funcion=publica,
+            viewport=mapa.viewport or {},
+            zonas=tuple(
+                ZonaDelMapa(z.id, z.nombre, z.color, desde.get(z.id)) for z in zonas
+            ),
+            butacas=butacas,
+        )
+
+    async def butacas_del_apartado(self, performance_id: int, hold_id: str) -> set[int]:
+        """Las butacas que este apartado tiene vigentes, para marcarlas "tuya"."""
+        return set(
+            (
+                await self.db.scalars(
+                    select(PerformanceSeat.seat_id).where(
+                        PerformanceSeat.performance_id == performance_id,
+                        PerformanceSeat.hold_id == hold_id,
+                        PerformanceSeat.estado == EstadoAsiento.APARTADO.value,
+                        PerformanceSeat.hold_expira_en > func.now(),
+                    )
+                )
+            ).all()
         )
 
     # ----------------------------------------------------------- privados

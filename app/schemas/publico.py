@@ -57,3 +57,38 @@ class EventoPublicoResponse(BaseModel):
     funciones: list[FuncionPublicaResponse]
 
     model_config = {"from_attributes": True}
+
+
+class ZonaDelMapaResponse(BaseModel):
+    id: int
+    nombre: str
+    color: str | None
+    precio_desde: Decimal | None
+
+    model_config = {"from_attributes": True}
+
+
+class ButacaDelMapaResponse(BaseModel):
+    id: int
+    zona_id: int
+    fila: str
+    numero: str
+    x: Decimal
+    y: Decimal
+    # libre: se puede elegir. ocupada: vendida, apartada por otra persona,
+    # bloqueada o cortesia, sin decir cual. tuya: la tiene el apartado que
+    # el front mando en `apartado`.
+    estado: Literal["libre", "ocupada", "tuya"]
+    # Precio final con IVA, el mismo que se cobra al apartar.
+    precio: Decimal
+
+    model_config = {"from_attributes": True}
+
+
+class MapaPublicoResponse(BaseModel):
+    funcion: FuncionPublicaResponse
+    viewport: dict
+    zonas: list[ZonaDelMapaResponse]
+    butacas: list[ButacaDelMapaResponse]
+
+    model_config = {"from_attributes": True}

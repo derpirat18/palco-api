@@ -133,6 +133,12 @@ Un evento en borrador o de un organizador dado de baja responde igual
 que uno inexistente (`visible_al_publico`), y la página y el apartado
 deciden "se vende o no" con la misma función (`motivo_no_se_vende`).
 
+El mapa de la función (`/publico/funciones/{id}/mapa`) sigue las reglas
+del mapa: cada butaca sale `libre` u `ocupada`, sin decir si se vendió,
+está apartada, bloqueada o es cortesía. "Libre" es exactamente lo que el
+apartado deja pasar. Las butacas en kill no se envían. Se guarda 2 s en
+Redis; lo del propio comprador (`tuya`) se calcula fresco.
+
 ## Flujo de compra
 
 ```
