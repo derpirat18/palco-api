@@ -61,11 +61,12 @@ class HoldService:
         front pueda refrescar solo esa butaca en el mapa.
         """
         if not seat_ids:
-            raise LimiteDeAsientos("No se recibio ninguna butaca.")
+            raise LimiteDeAsientos("Elige al menos un lugar.")
 
         if len(seat_ids) > settings.MAX_ASIENTOS_POR_ORDEN:
             raise LimiteDeAsientos(
-                f"Maximo {settings.MAX_ASIENTOS_POR_ORDEN} butacas por compra.",
+                f"Puedes comprar hasta {settings.MAX_ASIENTOS_POR_ORDEN} boletos "
+                "por compra.",
                 {"solicitadas": len(seat_ids)},
             )
 
@@ -83,7 +84,7 @@ class HoldService:
             # El script devuelve el indice base 1 de la primera ocupada.
             seat_id = seat_ids[resultado - 1]
             raise AsientoNoDisponible(
-                "Esa butaca ya la aparto alguien mas.",
+                "Alguien más acaba de elegir ese lugar. Elige otro, por favor.",
                 {"seat_id": seat_id, "performance_id": performance_id},
             )
 

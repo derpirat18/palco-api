@@ -112,7 +112,7 @@ class ApartadoService:
         """
         seat_ids = list(seat_ids)
         if not seat_ids:
-            raise LimiteDeAsientos("No se recibio ninguna butaca.")
+            raise LimiteDeAsientos("Elige al menos un lugar.")
         if len(set(seat_ids)) != len(seat_ids):
             raise LimiteDeAsientos("Hay butacas repetidas en la solicitud.")
 
@@ -133,14 +133,14 @@ class ApartadoService:
         faltantes = [s for s in seat_ids if s not in filas]
         if faltantes:
             raise ConflictoDeInventario(
-                "Hay butacas que no pertenecen a esta funcion.",
+                "Hay butacas que no pertenecen a esta función.",
                 {"butacas": faltantes},
             )
 
         for seat_id in seat_ids:
             if not self._apartable(filas[seat_id], hold_id, ahora):
                 raise AsientoNoDisponible(
-                    "Esa butaca ya no esta disponible.",
+                    "Alguien más acaba de elegir ese lugar. Elige otro, por favor.",
                     {"seat_id": seat_id, "performance_id": performance_id},
                 )
 
@@ -151,8 +151,8 @@ class ApartadoService:
         )
         if suelta is not None:
             raise DejaButacaSuelta(
-                "Esa seleccion deja una butaca sola. Elige butacas juntas o "
-                "deja al menos dos libres al lado.",
+                "Tu selección dejaría un lugar vacío entre dos ocupados. Elige "
+                "lugares juntos o deja libre el de al lado.",
                 {"seat_id": suelta, "performance_id": performance_id},
             )
 
@@ -210,7 +210,9 @@ class ApartadoService:
                 ttls.append(ttl)
 
         if not vigentes:
-            raise RecursoNoEncontrado("El apartado no existe o ya vencio.")
+            raise RecursoNoEncontrado(
+                "Tu apartado ya no está vigente. Elige tus lugares de nuevo."
+            )
 
         segundos = min(ttls)
         return EstadoDelApartado(
@@ -407,7 +409,8 @@ class ApartadoService:
         )
         if otras + len(seat_ids) > settings.MAX_ASIENTOS_POR_ORDEN:
             raise LimiteDeAsientos(
-                f"Maximo {settings.MAX_ASIENTOS_POR_ORDEN} butacas por compra.",
+                f"Puedes comprar hasta {settings.MAX_ASIENTOS_POR_ORDEN} boletos "
+                "por compra.",
                 {"ya_apartadas": otras, "solicitadas": len(seat_ids)},
             )
 
@@ -463,7 +466,7 @@ class ApartadoService:
         perdidas = [s for s in seat_ids if s not in reflejadas]
         if perdidas:
             raise AsientoNoDisponible(
-                "Esa butaca ya no esta disponible.",
+                "Alguien más acaba de elegir ese lugar. Elige otro, por favor.",
                 {"seat_id": perdidas[0], "performance_id": performance_id},
             )
 

@@ -52,13 +52,13 @@ def normalizar_telefono(texto: str | None, region: str = "MX") -> str | None:
         numero = phonenumbers.parse(limpio, region)
     except phonenumbers.NumberParseException as exc:
         raise TelefonoInvalido(
-            "Ese telefono no tiene un formato valido.", {"telefono": texto}
+            "Ese teléfono no tiene un formato válido.", {"telefono": texto}
         ) from exc
 
     if not phonenumbers.is_valid_number(numero):
         raise TelefonoInvalido(
-            "Ese telefono no es valido. Si es de otro pais, escribelo con su "
-            "codigo, por ejemplo +57 300 123 4567.",
+            "Ese teléfono no es válido. Si es de otro país, escríbelo con su "
+            "código, por ejemplo +57 300 123 4567.",
             {"telefono": texto},
         )
     return phonenumbers.format_number(numero, phonenumbers.PhoneNumberFormat.E164)

@@ -92,9 +92,9 @@ def decodificar_token(token: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITMO])
     except JWTError as exc:
-        raise TokenInvalido("El token no es valido o ya expiro.") from exc
+        raise TokenInvalido("Tu sesión terminó. Vuelve a iniciar sesión.") from exc
 
     if payload.get("tipo") != "access":
-        raise TokenInvalido("Tipo de token incorrecto.")
+        raise TokenInvalido("Tu sesión terminó. Vuelve a iniciar sesión.")
 
     return payload

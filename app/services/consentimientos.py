@@ -64,7 +64,7 @@ class ConsentimientoService:
             )
         if not origen.strip() or not aviso_version.strip():
             raise ConsentimientoInvalido(
-                "Origen y version del aviso son obligatorios: sin ellos el "
+                "Origen y versión del aviso son obligatorios: sin ellos el "
                 "registro no prueba nada."
             )
         registro = Consent(

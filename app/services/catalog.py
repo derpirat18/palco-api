@@ -188,8 +188,8 @@ class CatalogService:
         )
         if con_inventario:
             raise ConflictoDeCatalogo(
-                "Este evento ya tiene inventario: cambiar como se capturan los "
-                "precios cambiaria lo que paga el comprador. Se decide antes "
+                "Este evento ya tiene inventario: cambiar cómo se capturan los "
+                "precios cambiaría lo que paga el comprador. Se decide antes "
                 "de generar el inventario.",
                 {"campos": sorted({"iva_pct", "precios_incluyen_iva"} & set(cambios))},
             )
@@ -223,7 +223,7 @@ class CatalogService:
         ajenas = set(precios_por_zona) - zonas_validas
         if ajenas:
             raise ConflictoDeCatalogo(
-                "Hay zonas que no pertenecen al mapa de esta funcion.",
+                "Hay zonas que no pertenecen al mapa de esta función.",
                 {"zonas": sorted(ajenas)},
             )
 

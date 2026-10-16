@@ -56,10 +56,10 @@ class RangoFilas(BaseModel):
         if len(a) != 1 or len(b) != 1 or a not in alfabeto or b not in alfabeto:
             raise MapaInvalido(
                 "El rango de filas solo admite una letra de la A a la Z. "
-                "Para nombres como AA o 'Palco 1', usa la lista explicita."
+                "Para nombres como AA o 'Palco 1', usa la lista explícita."
             )
         if alfabeto.index(a) > alfabeto.index(b):
-            raise MapaInvalido(f"El rango de filas {a}-{b} esta invertido.")
+            raise MapaInvalido(f"El rango de filas {a}-{b} está invertido.")
         return list(alfabeto[alfabeto.index(a) : alfabeto.index(b) + 1])
 
 
@@ -103,7 +103,7 @@ class BloqueDeButacas(BaseModel):
     @classmethod
     def _filas_no_vacias(cls, v):
         if isinstance(v, list) and not v:
-            raise ValueError("La lista de filas no puede estar vacia.")
+            raise ValueError("La lista de filas no puede estar vacía.")
         return v
 
     def etiquetas_de_fila(self) -> list[str]:
@@ -127,7 +127,7 @@ class EspecificacionDeMapa(BaseModel):
         )
         if total > MAX_BUTACAS_POR_MAPA:
             raise ValueError(
-                f"El mapa generaria ~{total:,} butacas, por encima del limite "
+                f"El mapa generaría ~{total:,} butacas, por encima del límite "
                 f"de {MAX_BUTACAS_POR_MAPA:,}. Revisa butacas_por_fila."
             )
         return self
@@ -272,7 +272,7 @@ def generar_mapa(spec: EspecificacionDeMapa) -> MapaGenerado:
     )
 
     if mapa.total_butacas == 0:
-        raise MapaInvalido("El mapa no genero ninguna butaca.")
+        raise MapaInvalido("El mapa no generó ninguna butaca.")
 
     return mapa
 
@@ -296,7 +296,7 @@ def importar_mapa_csv(
     lector = csv.DictReader(io.StringIO(contenido.lstrip("﻿")))
 
     if lector.fieldnames is None:
-        raise MapaInvalido("El archivo esta vacio o no tiene encabezados.")
+        raise MapaInvalido("El archivo está vacío o no tiene encabezados.")
 
     encabezados = {h.strip().lower() for h in lector.fieldnames}
     faltantes = COLUMNAS_REQUERIDAS - encabezados
@@ -320,7 +320,7 @@ def importar_mapa_csv(
 
         if not (nombre_zona and etiqueta_fila and numero):
             raise MapaInvalido(
-                f"Linea {n_linea}: zona, fila y numero son obligatorios."
+                f"Línea {n_linea}: zona, fila y número son obligatorios."
             )
 
         try:
@@ -328,14 +328,14 @@ def importar_mapa_csv(
             y = Decimal(datos.get("y") or "0")
         except Exception as exc:
             raise MapaInvalido(
-                f"Linea {n_linea}: las coordenadas deben ser numericas."
+                f"Línea {n_linea}: las coordenadas deben ser numéricas."
             ) from exc
 
         llave = (nombre_zona, etiqueta_fila, numero)
         if llave in vistas:
             raise MapaInvalido(
-                f"Linea {n_linea}: la butaca {etiqueta_fila}-{numero} de "
-                f"{nombre_zona} esta repetida."
+                f"Línea {n_linea}: la butaca {etiqueta_fila}-{numero} de "
+                f"{nombre_zona} está repetida."
             )
         vistas.add(llave)
 
@@ -365,7 +365,7 @@ def importar_mapa_csv(
     total = sum(len(z.butacas) for z in zonas.values())
     if total > MAX_BUTACAS_POR_MAPA:
         raise MapaInvalido(
-            f"El archivo trae {total:,} butacas, por encima del limite de "
+            f"El archivo trae {total:,} butacas, por encima del límite de "
             f"{MAX_BUTACAS_POR_MAPA:,}."
         )
 

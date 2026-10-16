@@ -76,7 +76,7 @@ CERO = Decimal("0.00")
 # cortesia y va por otro camino.
 TOTAL_MINIMO = Decimal("10.00")
 ORIGEN_CONSENTIMIENTO = "checkout_web"
-ORDEN_NO_EXISTE = "La orden no existe."
+ORDEN_NO_EXISTE = "No encontramos esta compra."
 REQUIERE_REEMBOLSO = "requiere_reembolso"
 
 APARTADO = EstadoAsiento.APARTADO.value
@@ -207,7 +207,7 @@ class CheckoutService:
         """
         if not comprador.acepta_aviso:
             raise ConsentimientoInvalido(
-                "Para comprar hay que aceptar el aviso de privacidad."
+                "Para continuar, acepta el aviso de privacidad."
             )
         email = comprador.email.strip().lower()
         telefono = normalizar_telefono(comprador.telefono)
@@ -221,7 +221,8 @@ class CheckoutService:
             apartado = await self.apartados.consultar(performance_id, hold_id)
         except RecursoNoEncontrado as exc:
             raise ApartadoExpirado(
-                "Tu apartado vencio. Elige tus butacas de nuevo.",
+                "Se acabó el tiempo para completar tu compra y liberamos tus "
+                "lugares. Puedes volver a elegirlos.",
                 {"performance_id": performance_id},
             ) from exc
         seat_ids = [b.seat_id for b in apartado.butacas]
@@ -232,7 +233,8 @@ class CheckoutService:
         )
         if suelta is not None:
             raise DejaButacaSuelta(
-                "Tu seleccion deja una butaca sola. Ajusta tus butacas antes de pagar.",
+                "Tu selección deja un lugar vacío entre dos ocupados. Ajusta tus "
+                "lugares antes de pagar.",
                 {"seat_id": suelta, "performance_id": performance_id},
             )
 
@@ -311,8 +313,7 @@ class CheckoutService:
             # Dos clics al mismo tiempo sobre el mismo apartado: el otro
             # gano. Repetir devuelve su orden.
             raise PagoEnProceso(
-                "Ya se esta preparando el pago de estas butacas. Intenta de "
-                "nuevo en un momento.",
+                "Estamos procesando tu pago. No cierres esta página.",
                 {"performance_id": performance_id},
             ) from exc
 
@@ -325,7 +326,8 @@ class CheckoutService:
         except IntegrityError as exc:
             # Capa 3: otra orden viva tiene una de estas butacas.
             raise AsientoNoDisponible(
-                "Una de tus butacas ya esta en otra compra.",
+                "Uno de tus lugares ya está en otra compra. Elige tus lugares "
+                "de nuevo.",
                 {"performance_id": performance_id},
             ) from exc
 
@@ -538,7 +540,7 @@ class CheckoutService:
             # Esa orden se termina con `confirmar`, no se reemplaza.
             if intento.estado in (AUTORIZADO, COBRADO):
                 raise PagoEnProceso(
-                    "Ya hay un pago autorizado para estas butacas.",
+                    "Tu pago ya fue autorizado. En un momento verás tu confirmación.",
                     {"orden": str(previa.uuid)},
                 )
             intento = await self.pasarela.cancelar(
@@ -546,7 +548,7 @@ class CheckoutService:
             )
             if intento.estado != CANCELADO:
                 raise PagoEnProceso(
-                    "Ya hay un pago en curso para estas butacas.",
+                    "Estamos procesando tu pago. No cierres esta página.",
                     {"orden": str(previa.uuid)},
                 )
         await self._cerrar(previa, CANCELADA, "reemplazada")
@@ -585,7 +587,8 @@ class CheckoutService:
             performance_id, seat_ids, hold_id, ttl=ttl
         ):
             raise ApartadoExpirado(
-                "Tu apartado vencio. Elige tus butacas de nuevo.",
+                "Se acabó el tiempo para completar tu compra y liberamos tus "
+                "lugares. Puedes volver a elegirlos.",
                 {"performance_id": performance_id},
             )
 
@@ -594,7 +597,8 @@ class CheckoutService:
         )
         if ttl_redis <= MARGEN_ESPEJO_SEGUNDOS:
             raise ApartadoExpirado(
-                "Tu apartado esta por vencer. Elige tus butacas de nuevo.",
+                "Tu tiempo para completar la compra está por terminar. Elige tus "
+                "lugares de nuevo para tener el tiempo completo.",
                 {"performance_id": performance_id},
             )
         vigencia = timedelta(seconds=ttl_redis - MARGEN_ESPEJO_SEGUNDOS)
@@ -612,7 +616,8 @@ class CheckoutService:
         )
         if expira is None:
             raise ApartadoExpirado(
-                "Tu apartado vencio. Elige tus butacas de nuevo.",
+                "Se acabó el tiempo para completar tu compra y liberamos tus "
+                "lugares. Puedes volver a elegirlos.",
                 {"performance_id": performance_id},
             )
         return expira

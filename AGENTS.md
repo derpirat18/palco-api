@@ -261,11 +261,43 @@ dinero y acceso esté cubierto.
   código.
 - Sin comentarios obvios.
 
-## Errores
+## Errores y comunicación con el usuario
 
-Se levantan excepciones de `app/core/errors.py`, nunca se arman
-respuestas de error a mano en los routers. Hay un solo formato de error
-en toda la API.
+**La regla de PSD:** nunca dejar al usuario frente a un error técnico,
+ni hacerle pensar que la plataforma falló cuando se trata de una regla
+de negocio.
+
+Se levantan excepciones de `app/core/errors.py`; nunca se arman
+respuestas de error a mano en los routers. Toda respuesta de error, venga
+de donde venga (dominio, validación, ruta inexistente, falla), tiene la
+misma forma:
+
+```json
+{"error": {"codigo": "...", "mensaje": "...", "detalle": {}}}
+```
+
+Cada error cae en uno de tres casos, y cada uno se comunica distinto:
+
+| Caso | Ejemplo | `mensaje` | PSD |
+|---|---|---|---|
+| Regla de negocio | Agotado, cancelado, lugar ocupado, venta cerrada | Qué pasó y qué puede hacer ahora | Nada, o el resumen diario |
+| Dato a corregir | Teléfono incompleto, falta aceptar el aviso | Qué corregir, en palabras simples (`datos_invalidos` lo hace campo por campo) | Nada |
+| Falla nuestra | Excepción sin manejar, Stripe caído | "El sistema no está disponible en este momento…" con un **folio** (`error_interno`) | La traza completa en el registro, con el mismo folio |
+
+Reglas para escribir un `mensaje`:
+
+- Es el texto final que lee una persona: **en español, con acentos**, en
+  segunda persona ("Elige otro lugar"), sin jerga ("butaca suelta",
+  "token", "materializar" no van para el comprador).
+- Dice qué pasó y qué hacer. Si la persona no puede hacer nada, que no
+  lo parezca su culpa.
+- **Nunca** lleva causas técnicas (nombres de variables, `.env`, Stripe,
+  SQL, IP, trazas) ni repite lo que el usuario escribió. Eso va al
+  registro (`log`), no a la respuesta.
+- El `codigo` es estable y es lo que el front usa para decidir qué hacer;
+  el `mensaje` se puede mejorar sin romper nada.
+- Lo que va en `detalle` son datos que el front necesita (una fecha, los
+  campos a corregir, el folio), nunca datos personales.
 
 ## Lo que no se hace
 

@@ -30,6 +30,11 @@ from app.core.errors import ErrorDeDominio
 
 log = logging.getLogger("palco.pasarela")
 
+SISTEMA_DE_PAGOS_NO_DISPONIBLE = (
+    "El sistema de pagos no está disponible en este momento. Intenta de nuevo "
+    "en unos minutos."
+)
+
 # Estados de un PaymentIntent que importan aqui.
 AUTORIZADO = "requires_capture"
 COBRADO = "succeeded"
@@ -152,7 +157,8 @@ class StripePasarela:
 
     def _stripe(self) -> stripe.StripeClient:
         if not self._secret_key:
-            raise PasarelaSinConfigurar("Falta STRIPE_SECRET_KEY en el .env.")
+            log.error("Falta STRIPE_SECRET_KEY en el .env.")
+            raise PasarelaSinConfigurar(SISTEMA_DE_PAGOS_NO_DISPONIBLE)
         if self._cliente is None:
             self._cliente = stripe.StripeClient(
                 self._secret_key, http_client=self._http or stripe.HTTPXClient()
@@ -196,7 +202,8 @@ class StripePasarela:
         except stripe.StripeError as exc:
             _anotar("crear", exc)
             raise PasarelaNoDisponible(
-                "No pudimos iniciar el pago. Intenta de nuevo en un momento."
+                "El sistema de pagos no está disponible en este momento. Tus lugares "
+                "siguen apartados; intenta de nuevo en unos minutos."
             ) from exc
         return _intento(pi)
 
@@ -205,7 +212,10 @@ class StripePasarela:
             pi = await self._intentos().retrieve_async(intento_id)
         except stripe.StripeError as exc:
             _anotar("consultar", exc)
-            raise PasarelaNoDisponible("No pudimos consultar el pago.") from exc
+            raise PasarelaNoDisponible(
+                "No pudimos confirmar tu pago en este momento. Si ya pagaste, no "
+                "vuelvas a pagar: te enviaremos la confirmación por correo."
+            ) from exc
         return _intento(pi)
 
     async def capturar(self, intento_id: str, *, idempotency_key: str) -> IntentoDePago:
@@ -216,14 +226,15 @@ class StripePasarela:
         except stripe.StripeError as exc:
             _anotar("capturar", exc)
             if _transitorio(exc):
-                raise PasarelaNoDisponible("No pudimos capturar el pago.") from exc
+                raise PasarelaNoDisponible(SISTEMA_DE_PAGOS_NO_DISPONIBLE) from exc
             # Stripe se nego. Puede ser que ya estaba capturado (reintento
             # de un reintento): eso no es rechazo.
             actual = await self.obtener(intento_id)
             if actual.estado == COBRADO:
                 return actual
             raise CobroRechazado(
-                "El pago ya no se puede cobrar.",
+                "Tu banco no autorizó el pago. No se hizo ningún cargo; puedes "
+                "intentar con otra tarjeta.",
                 {"estado": actual.estado},
             ) from exc
         return _intento(pi)
@@ -236,7 +247,7 @@ class StripePasarela:
         except stripe.StripeError as exc:
             _anotar("cancelar", exc)
             if _transitorio(exc):
-                raise PasarelaNoDisponible("No pudimos cancelar el pago.") from exc
+                raise PasarelaNoDisponible(SISTEMA_DE_PAGOS_NO_DISPONIBLE) from exc
             # Ya cancelado, ya cobrado, o en proceso: quien llama decide
             # con el estado real.
             return await self.obtener(intento_id)
@@ -249,11 +260,12 @@ class StripePasarela:
         es una puerta para que cualquiera marque ordenes como pagadas.
         """
         if not self._webhook_secret:
-            raise PasarelaSinConfigurar("Falta STRIPE_WEBHOOK_SECRET en el .env.")
+            log.error("Falta STRIPE_WEBHOOK_SECRET en el .env.")
+            raise PasarelaSinConfigurar(SISTEMA_DE_PAGOS_NO_DISPONIBLE)
         try:
             stripe.Webhook.construct_event(payload, firma, self._webhook_secret)
         except (ValueError, stripe.SignatureVerificationError) as exc:
-            raise FirmaInvalida("La firma del webhook no es valida.") from exc
+            raise FirmaInvalida("La firma del webhook no es válida.") from exc
         return json.loads(payload)
 
 

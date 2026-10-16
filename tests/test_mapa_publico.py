@@ -207,7 +207,7 @@ async def test_lo_que_no_es_publico_no_existe(api, db, esc, caso):
     assert r.status_code == 404
     assert r.json()["error"] == {
         "codigo": "no_encontrado",
-        "mensaje": "La funcion no existe.",
+        "mensaje": "No encontramos esta función.",
         "detalle": {},
     }
 

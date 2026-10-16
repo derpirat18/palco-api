@@ -45,19 +45,21 @@ async def get_current_user(
     entrando hasta que expirara su token.
     """
     if credenciales is None:
-        raise TokenInvalido("Falta el token de acceso.")
+        raise TokenInvalido("Inicia sesión para continuar.")
 
     payload = decodificar_token(credenciales.credentials)
 
     try:
         user_id = int(payload["sub"])
     except (KeyError, ValueError) as exc:
-        raise TokenInvalido("El token no identifica a un usuario.") from exc
+        raise TokenInvalido("Tu sesión terminó. Vuelve a iniciar sesión.") from exc
 
     usuario = await db.scalar(select(User).where(User.id == user_id))
 
     if usuario is None or not usuario.activo:
-        raise TokenInvalido("La cuenta no existe o esta inactiva.")
+        raise TokenInvalido(
+            "Tu cuenta no está activa. Si crees que es un error, escríbenos."
+        )
 
     return usuario
 
@@ -77,7 +79,7 @@ def requiere_rol(*roles: RolUsuario) -> Callable:
     async def verificar(usuario: UsuarioActual) -> User:
         if usuario.rol not in permitidos:
             raise PermisoInsuficiente(
-                "Tu rol no tiene acceso a esta operacion.",
+                "Tu cuenta no tiene permiso para esta acción.",
                 {"rol": usuario.rol, "requerido": sorted(permitidos)},
             )
         return usuario

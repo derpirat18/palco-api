@@ -3,7 +3,6 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -12,6 +11,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import ErrorDeDominio
+from app.core.fallas import (
+    AtrapaFallas,
+    cuerpo_de_error_http,
+    cuerpo_de_validacion,
+)
 from app.core.redis import redis_client
 from app.core.respuestas import JSONUtf8
 
@@ -31,6 +35,9 @@ app = FastAPI(
     default_response_class=JSONUtf8,
 )
 
+# Primero el que atrapa fallas y despues CORS: el ultimo agregado queda por
+# fuera, asi la respuesta de una falla tambien lleva sus encabezados de CORS.
+app.add_middleware(AtrapaFallas)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -56,10 +63,9 @@ async def manejar_error_de_dominio(_: Request, exc: ErrorDeDominio) -> JSONUtf8:
     )
 
 
-# Los dos handlers que siguen reemplazan a los de FastAPI solo para que
-# sus respuestas tambien declaren charset=utf-8. El cuerpo es el mismo
-# que el de FastAPI; unificarlo con el formato de ErrorDeDominio es la
-# otra mitad de #44 y va con el catalogo de mensajes.
+# Formato unico de error tambien para lo que levanta FastAPI o Starlette
+# (ruta inexistente, metodo no permitido, datos invalidos). Nunca sale el
+# texto en ingles del framework ni la entrada del usuario (M3).
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -68,7 +74,9 @@ async def manejar_error_http(_: Request, exc: StarletteHTTPException) -> Respons
     if exc.status_code in {204, 304}:
         return Response(status_code=exc.status_code, headers=headers)
     return JSONUtf8(
-        status_code=exc.status_code, content={"detail": exc.detail}, headers=headers
+        status_code=exc.status_code,
+        content=cuerpo_de_error_http(exc.status_code),
+        headers=headers,
     )
 
 
@@ -76,7 +84,7 @@ async def manejar_error_http(_: Request, exc: StarletteHTTPException) -> Respons
 async def manejar_error_de_validacion(
     _: Request, exc: RequestValidationError
 ) -> JSONUtf8:
-    return JSONUtf8(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
+    return JSONUtf8(status_code=422, content=cuerpo_de_validacion(list(exc.errors())))
 
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)

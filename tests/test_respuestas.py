@@ -50,7 +50,7 @@ async def test_ruta_inexistente(cliente_http):
     r = await cliente_http.get(f"{API}/no-existe")
     assert r.status_code == 404
     declara_utf8(r)
-    assert r.json() == {"detail": "Not Found"}
+    assert r.json()["error"]["codigo"] == "no_encontrado"
 
 
 async def test_metodo_no_permitido_conserva_sus_encabezados(cliente_http):
@@ -64,4 +64,4 @@ async def test_error_de_validacion(cliente_http):
     r = await cliente_http.post(f"{API}/auth/login", json={"email": "no-es-correo"})
     assert r.status_code == 422
     declara_utf8(r)
-    assert isinstance(r.json()["detail"], list)
+    assert r.json()["error"]["codigo"] == "datos_invalidos"

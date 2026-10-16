@@ -217,7 +217,7 @@ async def crear_evento(datos: EventoCrear, db: DB, usuario: UsuarioActual) -> Ev
     if usuario.rol == RolUsuario.ADMIN_PSD:
         if datos.client_id is None:
             raise ConflictoDeCatalogo(
-                "Como admin de PSD hay que indicar a que organizador pertenece."
+                "Como admin de PSD hay que indicar a qué organizador pertenece."
             )
         client_id = datos.client_id
     else:
@@ -273,7 +273,7 @@ async def actualizar_evento(
     cambios = datos.model_dump(exclude_unset=True)
 
     if "estado" in cambios and cambios["estado"] not in {e.value for e in EstadoEvento}:
-        raise ConflictoDeCatalogo(f"Estado invalido: {cambios['estado']}.")
+        raise ConflictoDeCatalogo(f"Estado inválido: {cambios['estado']}.")
 
     await servicio.verificar_cambio_de_iva(evento, cambios)
 

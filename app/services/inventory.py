@@ -147,7 +147,7 @@ class InventoryService:
         butacas = await self._butacas_del_mapa(funcion.seat_map_id)
         if not butacas:
             raise InventarioIncompleto(
-                "El mapa de butacas de esta funcion no tiene butacas."
+                "El mapa de butacas de esta función no tiene butacas."
             )
 
         precios = await self._precios_por_zona(performance_id)
@@ -165,7 +165,7 @@ class InventoryService:
         )
         if gano.rowcount == 0:
             raise ConflictoDeInventario(
-                "El inventario de esta funcion ya fue generado.",
+                "El inventario de esta función ya fue generado.",
                 {"performance_id": performance_id},
             )
 
@@ -207,7 +207,7 @@ class InventoryService:
         funcion = await self.obtener_funcion(performance_id)
         if not funcion.inventario_generado:
             raise ConflictoDeInventario(
-                "Esta funcion todavia no tiene inventario. Materializalo primero."
+                "Esta función todavía no tiene inventario. Materialízalo primero."
             )
 
         butacas = await self._butacas_del_mapa(funcion.seat_map_id)
@@ -303,7 +303,7 @@ class InventoryService:
         if estado_nuevo not in ESTADOS_DEL_PANEL:
             raise ConflictoDeInventario(
                 "Desde el panel una butaca solo puede quedar disponible, "
-                "bloqueada o en kill. Las ventas y cortesias se emiten con una "
+                "bloqueada o en kill. Las ventas y cortesías se emiten con una "
                 "orden.",
                 {"estado": estado_nuevo, "permitidos": sorted(ESTADOS_DEL_PANEL)},
             )
@@ -323,14 +323,14 @@ class InventoryService:
         ajenas = set(performance_seat_ids) - encontradas
         if ajenas:
             raise ConflictoDeInventario(
-                "Hay butacas que no pertenecen a esta funcion.",
+                "Hay butacas que no pertenecen a esta función.",
                 {"butacas": sorted(ajenas)},
             )
 
         comprometidas = [f.id for f in filas if f.estado in ESTADOS_COMPROMETIDOS]
         if comprometidas:
             raise ConflictoDeInventario(
-                "Hay butacas vendidas o en cortesia. Eso se deshace cancelando "
+                "Hay butacas vendidas o en cortesía. Eso se deshace cancelando "
                 "la orden, no cambiando el estado.",
                 {"butacas": sorted(comprometidas)},
             )
@@ -378,7 +378,7 @@ class InventoryService:
             if perdidas:
                 raise ConflictoDeInventario(
                     "Algunas butacas cambiaron mientras se procesaba la "
-                    "operacion. Actualiza el mapa e intenta de nuevo.",
+                    "operación. Actualiza el mapa e intenta de nuevo.",
                     {"butacas": perdidas},
                 )
 
@@ -466,7 +466,7 @@ class InventoryService:
                 "No se puede abrir venta sin inventario materializado."
             )
         if funcion.estado == EstadoFuncion.CANCELADA.value:
-            raise ConflictoDeInventario("La funcion esta cancelada.")
+            raise ConflictoDeInventario("La función está cancelada.")
 
         funcion.estado = EstadoFuncion.EN_VENTA.value
         await self.db.flush()
@@ -526,7 +526,7 @@ class InventoryService:
         sin_precio = sorted({b.zone_id for b in butacas} - set(precios))
         if sin_precio:
             raise InventarioIncompleto(
-                "Hay zonas sin precio para esta funcion. Fijalos antes de "
+                "Hay zonas sin precio para esta función. Fíjalos antes de "
                 "materializar el inventario.",
                 {"zonas": sin_precio},
             )

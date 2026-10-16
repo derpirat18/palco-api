@@ -40,7 +40,7 @@ class _NormalizaIdentificadores(BaseModel):
         # poder dar de alta al organizador. Queda pendiente verificarlo
         # contra cuentas reales antes de activarlo.
         if len(clabe) != 18 or not clabe.isdigit():
-            raise ValueError("La CLABE debe ser de 18 digitos.")
+            raise ValueError("La CLABE debe ser de 18 dígitos.")
         return clabe
 
     @field_validator("ga_id", check_fields=False)
@@ -58,7 +58,7 @@ class _NormalizaIdentificadores(BaseModel):
         if not re.fullmatch(r"G-[A-Z0-9]{6,12}", ga):
             raise ValueError(
                 "El ID de Google Analytics 4 empieza con G- (por ejemplo "
-                "G-7KQ2M4XW9P). Los IDs UA- son de la version anterior."
+                "G-7KQ2M4XW9P). Los IDs UA- son de la versión anterior."
             )
         return ga
 
@@ -70,7 +70,7 @@ class _NormalizaIdentificadores(BaseModel):
             return None
         pixel = valor.strip()
         if not re.fullmatch(r"\d{15,16}", pixel):
-            raise ValueError("El ID del pixel de Meta son 15 o 16 digitos.")
+            raise ValueError("El ID del pixel de Meta son 15 o 16 dígitos.")
         return pixel
 
     @field_validator("email", check_fields=False)

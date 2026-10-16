@@ -23,6 +23,21 @@ from app.models.catalog import Client, Event, Performance
 CENTAVO = Decimal("0.01")
 
 
+AUN_NO_ABRE = "La venta de esta función todavía no abre."
+# Lo que lee el comprador segun el estado de la funcion. Son reglas de
+# negocio, no fallas: se dicen claro para que nadie piense que la
+# plataforma fallo.
+_POR_ESTADO = {
+    EstadoFuncion.CANCELADA.value: (
+        "Esta función fue cancelada. Si compraste boletos, te escribiremos "
+        "con los pasos para tu reembolso."
+    ),
+    EstadoFuncion.AGOTADA.value: "Boletos agotados para esta función.",
+    EstadoFuncion.REALIZADA.value: "Esta función ya se realizó.",
+    EstadoFuncion.PROGRAMADA.value: AUN_NO_ABRE,
+}
+
+
 def motivo_no_se_vende(
     funcion: Performance, ahora: datetime
 ) -> tuple[str, dict] | None:
@@ -36,19 +51,20 @@ def motivo_no_se_vende(
     """
     if funcion.estado != EstadoFuncion.EN_VENTA.value:
         return (
-            "Esta funcion no esta a la venta.",
+            _POR_ESTADO.get(funcion.estado, AUN_NO_ABRE),
             {"motivo": "estado", "estado": funcion.estado},
         )
     if not funcion.inventario_generado:
-        return "Esta funcion todavia no tiene inventario.", {"motivo": "sin_inventario"}
+        return AUN_NO_ABRE, {"motivo": "sin_inventario"}
     if funcion.venta_abre_en is not None and ahora < funcion.venta_abre_en:
-        return "La venta de esta funcion todavia no abre.", {
+        # La fecha va en `abre_en`: el front la muestra a la hora del recinto.
+        return AUN_NO_ABRE, {
             "motivo": "aun_no_abre",
             "abre_en": funcion.venta_abre_en.isoformat(),
         }
     cierra = funcion.venta_cierra_en or funcion.inicia_en
     if ahora >= cierra:
-        return "La venta de esta funcion ya cerro.", {
+        return "La venta en línea para esta función ya cerró.", {
             "motivo": "venta_cerrada",
             "cerro_en": cierra.isoformat(),
         }

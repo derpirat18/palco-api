@@ -107,7 +107,7 @@ class ClientService:
         )
         if publicados:
             raise ConflictoDeOrganizador(
-                "El organizador tiene eventos publicados. Archivalos primero.",
+                "El organizador tiene eventos publicados. Archívalos primero.",
                 {"eventos_publicados": int(publicados)},
             )
 
