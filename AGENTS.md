@@ -159,6 +159,10 @@ Detalle en ADR 0010. Lo que no se rompe:
   sistema directo desde el checkout.
 - Toda llamada a Stripe lleva llave de idempotencia derivada del `uuid`
   de la orden (`orden-`, `capturar-`, `cancelar-`).
+- El QR del boleto (ADR 0014) lleva solo el uuid y una firma con
+  `TICKET_SIGNING_KEY`; nunca datos personales. Solo un boleto `valido`
+  de una orden `pagada` muestra QR. Se lee con `leer_qr`, nunca
+  separando el texto a mano.
 - El barrido (`.\make.ps1 barrido`) termina lo que queda a medias:
   órdenes vencidas, apartados vencidos, capturas pendientes y avisos de
   capturas atrasadas. Nunca cierra una orden sin cancelar antes en

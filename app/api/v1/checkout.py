@@ -15,6 +15,13 @@ from app.api.deps import DB
 from app.api.v1.apartados import Holds
 from app.core.config import settings
 from app.models.sales import Order, OrderItem
+from app.schemas.boletos import (
+    BoletoResponse,
+    BoletosResponse,
+    EventoDelBoletoResponse,
+    FuncionDelBoletoResponse,
+    RecintoDelBoletoResponse,
+)
 from app.schemas.checkout import (
     CheckoutRequest,
     CheckoutResponse,
@@ -22,6 +29,7 @@ from app.schemas.checkout import (
     PagoResponse,
     PartidaResponse,
 )
+from app.services.boletos import boletos_de_la_orden
 from app.services.checkout import (
     Atribucion,
     CheckoutService,
@@ -120,6 +128,31 @@ async def iniciar_checkout(
 async def consultar(orden_uuid: UUID, db: DB) -> OrdenResponse:
     orden, partidas = await consultar_orden(db, orden_uuid)
     return _orden(orden, partidas)
+
+
+@router.get("/ordenes/{orden_uuid}/boletos", response_model=BoletosResponse)
+async def boletos(orden_uuid: UUID, db: DB) -> BoletosResponse:
+    """La vista "Tus boletos": el QR de cada lugar, listo para la puerta."""
+    vista = await boletos_de_la_orden(db, orden_uuid)
+    return BoletosResponse(
+        folio=vista.orden.folio,
+        estado=vista.orden.estado,
+        evento=EventoDelBoletoResponse(
+            nombre=vista.evento.nombre, slug=vista.evento.slug
+        ),
+        funcion=FuncionDelBoletoResponse(
+            uuid=vista.funcion.uuid,
+            inicia_en=vista.funcion.inicia_en,
+            apertura_puertas=vista.funcion.apertura_puertas,
+        ),
+        recinto=RecintoDelBoletoResponse(
+            nombre=vista.recinto.nombre,
+            direccion=vista.recinto.direccion,
+            ciudad=vista.recinto.ciudad,
+            zona_horaria=vista.recinto.zona_horaria,
+        ),
+        boletos=[BoletoResponse(**b.__dict__) for b in vista.boletos],
+    )
 
 
 @router.post("/ordenes/{orden_uuid}/confirmar", response_model=OrdenResponse)
