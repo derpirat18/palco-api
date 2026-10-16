@@ -7,7 +7,7 @@ adivinar que genera el front.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 from pydantic import UUID4
 
 from app.api.deps import DB
@@ -20,6 +20,7 @@ from app.services.limites import (
     registrar_apartado,
     soltar_apartado,
 )
+from app.services.turnos import verificar_turno
 
 router = APIRouter(prefix="/performances", tags=["apartados"])
 
@@ -45,12 +46,17 @@ async def apartar(
     holds: Holds,
     request: Request,
     redis: RedisLimites,
+    turno: Annotated[str | None, Header(alias="X-Palco-Turno")] = None,
 ) -> ApartadoResponse:
     """Aparta butacas. Repetirla con el mismo `hold_id` es seguro.
 
     Si el commit falla despues de apartar en Redis, las llaves vencen
     solas con su TTL: molesto, no catastrofico.
+
+    Con la sala de espera activa, empezar un apartado exige el pase del
+    turno en `X-Palco-Turno` (ADR 0017).
     """
+    await verificar_turno(db, redis, performance_id, datos.hold_id.hex, turno)
     await registrar_apartado(redis, request, datos.hold_id.hex)
     estado = await ApartadoService(db, holds).apartar(
         performance_id, datos.seat_ids, datos.hold_id.hex

@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     # CDN). Con 0 se ignora X-Forwarded-For: cualquiera puede escribirlo.
     PROXIES_DE_CONFIANZA: int = 0
 
+    # --- Sala de espera (ADR 0017) ---
+    # Apagada, la puerta del turno no consulta nada. Encendida, exige pase
+    # solo en los eventos con la sala activa.
+    SALA_DE_ESPERA_HABILITADA: bool = False
+
     # --- Front ---
     # Base de los enlaces que salen en correos ("Ver mis boletos").
     FRONT_URL: str = "http://localhost:5173"

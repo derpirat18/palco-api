@@ -163,6 +163,9 @@ Detalle en ADR 0010. Lo que no se rompe:
   `TICKET_SIGNING_KEY`; nunca datos personales. Solo un boleto `valido`
   de una orden `pagada` muestra QR. Se lee con `leer_qr`, nunca
   separando el texto a mano.
+- Empezar un apartado pasa por la puerta del turno (`verificar_turno`,
+  ADR 0017). Una ruta nueva que reserve lugares también tiene que pasar
+  por ella, o la sala de espera se brinca.
 - Toda ruta pública nueva lleva su `limite("grupo")` (ADR 0016). Una
   ruta sin límite es la puerta que un bot va a encontrar.
 - Ningún correo sale desde una petición ni dentro del cobro. Lo manda
