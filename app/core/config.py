@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
+    # --- Limites contra bots y fuerza bruta (ADR 0016) ---
+    # Apagarlos solo en pruebas; fuera de local siempre estan encendidos.
+    LIMITES_ACTIVOS: bool = True
+    # Cuantos proxies de confianza hay delante de la API (balanceador,
+    # CDN). Con 0 se ignora X-Forwarded-For: cualquiera puede escribirlo.
+    PROXIES_DE_CONFIANZA: int = 0
+
     # --- Front ---
     # Base de los enlaces que salen en correos ("Ver mis boletos").
     FRONT_URL: str = "http://localhost:5173"
@@ -134,6 +141,13 @@ class Settings(BaseSettings):
                 "SECRET_KEY y TICKET_SIGNING_KEY deben ser distintas. "
                 f"{COMO_GENERAR_LLAVE}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _limites_fuera_de_local(self) -> "Settings":
+        """Sin limites, un bot acapara el mapa o adivina contrasenas."""
+        if self.ENTORNO != "local" and not self.LIMITES_ACTIVOS:
+            raise ValueError("Fuera de ENTORNO=local, LIMITES_ACTIVOS debe ser true.")
         return self
 
     @model_validator(mode="after")

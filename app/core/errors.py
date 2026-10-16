@@ -8,6 +8,8 @@ arman respuestas de error a mano: levantan estas excepciones.
 class ErrorDeDominio(Exception):
     codigo = "error_de_dominio"
     http_status = 400
+    # Encabezados extra de la respuesta, p. ej. Retry-After en un 429.
+    headers: dict[str, str] | None = None
 
     def __init__(self, mensaje: str, detalle: dict | None = None) -> None:
         super().__init__(mensaje)

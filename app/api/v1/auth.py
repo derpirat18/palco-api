@@ -4,7 +4,7 @@ from fastapi import APIRouter, status
 
 from app.api.deps import DB, UsuarioActual
 from app.core.config import settings
-from app.core.security import crear_access_token
+from app.core.security import CredencialesInvalidas, crear_access_token
 from app.schemas.auth import (
     CambioPasswordRequest,
     LoginRequest,
@@ -12,13 +12,28 @@ from app.schemas.auth import (
     UsuarioResponse,
 )
 from app.services.auth import AuthService
+from app.services.limites import (
+    RedisLimites,
+    anotar_fallo,
+    limite,
+    limpiar_fallos,
+    verificar_candado,
+)
 
 router = APIRouter(prefix="/auth")
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login(datos: LoginRequest, db: DB) -> TokenResponse:
-    usuario = await AuthService(db).autenticar(datos.email, datos.password)
+@router.post("/login", response_model=TokenResponse, dependencies=[limite("login")])
+async def login(datos: LoginRequest, db: DB, redis: RedisLimites) -> TokenResponse:
+    # El candado va antes de revisar la contrasena: bloqueada, ni la
+    # correcta entra. Asi adivinar no sirve aunque se acierte.
+    await verificar_candado(redis, datos.email)
+    try:
+        usuario = await AuthService(db).autenticar(datos.email, datos.password)
+    except CredencialesInvalidas:
+        await anotar_fallo(redis, datos.email)
+        raise
+    await limpiar_fallos(redis, datos.email)
     token = crear_access_token(
         subject=usuario.id, rol=usuario.rol, client_id=usuario.client_id
     )

@@ -36,6 +36,7 @@ from app.services.checkout import (
     DatosDelComprador,
     consultar_orden,
 )
+from app.services.limites import limite, verificar_ordenes_pendientes
 from app.services.pasarela import Pasarela, pasarela_de_stripe
 from app.services.webhooks import procesar_evento
 
@@ -80,6 +81,7 @@ def _orden(orden: Order, partidas: list[OrderItem]) -> OrdenResponse:
     "/performances/{performance_id}/apartados/{hold_id}/checkout",
     response_model=CheckoutResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[limite("checkout")],
 )
 async def iniciar_checkout(
     performance_id: int,
@@ -94,6 +96,7 @@ async def iniciar_checkout(
     Repetirla con los mismos datos devuelve la misma orden: el doble clic
     no abre dos cobros.
     """
+    await verificar_ordenes_pendientes(db, str(datos.email), hold_id.hex)
     iniciada = await CheckoutService(db, holds, pasarela).iniciar(
         performance_id,
         hold_id.hex,
@@ -124,13 +127,21 @@ async def iniciar_checkout(
     )
 
 
-@router.get("/ordenes/{orden_uuid}", response_model=OrdenResponse)
+@router.get(
+    "/ordenes/{orden_uuid}",
+    response_model=OrdenResponse,
+    dependencies=[limite("consulta")],
+)
 async def consultar(orden_uuid: UUID, db: DB) -> OrdenResponse:
     orden, partidas = await consultar_orden(db, orden_uuid)
     return _orden(orden, partidas)
 
 
-@router.get("/ordenes/{orden_uuid}/boletos", response_model=BoletosResponse)
+@router.get(
+    "/ordenes/{orden_uuid}/boletos",
+    response_model=BoletosResponse,
+    dependencies=[limite("consulta")],
+)
 async def boletos(orden_uuid: UUID, db: DB) -> BoletosResponse:
     """La vista "Tus boletos": el QR de cada lugar, listo para la puerta."""
     vista = await boletos_de_la_orden(db, orden_uuid)
@@ -155,7 +166,11 @@ async def boletos(orden_uuid: UUID, db: DB) -> BoletosResponse:
     )
 
 
-@router.post("/ordenes/{orden_uuid}/confirmar", response_model=OrdenResponse)
+@router.post(
+    "/ordenes/{orden_uuid}/confirmar",
+    response_model=OrdenResponse,
+    dependencies=[limite("confirmar")],
+)
 async def confirmar(
     orden_uuid: UUID, db: DB, holds: Holds, pasarela: PasarelaDep
 ) -> OrdenResponse:

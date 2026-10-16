@@ -45,6 +45,7 @@ async def manejar_error_de_dominio(_: Request, exc: ErrorDeDominio) -> JSONUtf8:
     """Formato unico de error para toda la API."""
     return JSONUtf8(
         status_code=exc.http_status,
+        headers=exc.headers,
         content={
             "error": {
                 "codigo": exc.codigo,

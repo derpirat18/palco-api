@@ -6,12 +6,17 @@ from fastapi import APIRouter, Path
 
 from app.api.deps import DB
 from app.schemas.publico import EventoPublicoResponse
+from app.services.limites import limite
 from app.services.publico import PublicoService
 
 router = APIRouter(prefix="/publico", tags=["publico"])
 
 
-@router.get("/eventos/{slug}", response_model=EventoPublicoResponse)
+@router.get(
+    "/eventos/{slug}",
+    response_model=EventoPublicoResponse,
+    dependencies=[limite("publico")],
+)
 async def evento_publico(
     slug: Annotated[str, Path(max_length=160)], db: DB
 ) -> EventoPublicoResponse:

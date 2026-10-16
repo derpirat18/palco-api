@@ -98,3 +98,19 @@ def test_stripe_vacio_o_real_si_arranca():
     )
     assert vacio.STRIPE_SECRET_KEY == ""
     assert real.STRIPE_SECRET_KEY == "sk_test_51Abc"
+
+
+def test_fuera_de_local_los_limites_y_el_cifrado_son_obligatorios():
+    llaves = {"SECRET_KEY": LLAVE_A, "TICKET_SIGNING_KEY": LLAVE_B}
+    seguro = {"LIMITES_ACTIVOS": True, "CORREO_SMTP_STARTTLS": True}
+
+    assert construir(ENTORNO="prod", **llaves, **seguro).LIMITES_ACTIVOS
+
+    with pytest.raises(ValidationError, match="LIMITES_ACTIVOS"):
+        construir(ENTORNO="prod", **llaves, **{**seguro, "LIMITES_ACTIVOS": False})
+    with pytest.raises(ValidationError, match="STARTTLS"):
+        construir(
+            ENTORNO="staging", **llaves, **{**seguro, "CORREO_SMTP_STARTTLS": False}
+        )
+    # En local se pueden apagar, para las pruebas.
+    assert not construir(**llaves, LIMITES_ACTIVOS=False).LIMITES_ACTIVOS

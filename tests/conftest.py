@@ -12,6 +12,9 @@ import pytest_asyncio
 import redis.asyncio as aioredis
 
 os.environ.setdefault("ENTORNO", "local")
+# Los limites se prueban aparte (test_limites.py), con su propio Redis.
+# Encendidos aqui, cientos de pruebas desde la misma IP los rebasarian.
+os.environ.setdefault("LIMITES_ACTIVOS", "false")
 
 REDIS_TEST_URL = os.getenv("REDIS_TEST_URL", "redis://localhost:6379/15")
 DB_TEST_URL = os.getenv(
