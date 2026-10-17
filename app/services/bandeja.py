@@ -63,6 +63,7 @@ class BandejaService:
         self.lote = lote
         self.atiende: dict[str, Atender] = {
             "orden.pagada": self._correo_de_confirmacion,
+            "cortesia.emitida": self._correo_de_cortesia,
         }
 
     async def _correo_de_confirmacion(
@@ -74,6 +75,15 @@ class BandejaService:
             log.info(
                 "Orden %s ya no esta pagada; no se manda correo.", evento.agregado_uuid
             )
+            return
+        await self.cartero.enviar(mensaje)
+
+    async def _correo_de_cortesia(self, db: AsyncSession, evento: OutboxEvent) -> None:
+        mensaje = await armar_confirmacion(
+            db, UUID(evento.payload["orden_uuid"]), cortesia=True
+        )
+        if mensaje is None:
+            # Se revoco antes de que saliera: nada que mandar.
             return
         await self.cartero.enviar(mensaje)
 

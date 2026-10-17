@@ -27,6 +27,7 @@ from app.models.payments import PaymentEvent
 from app.models.sales import (
     AccessDevice,
     Consent,
+    Cortesia,
     Customer,
     Order,
     OrderItem,
@@ -41,6 +42,7 @@ __all__ = [
     "Base",
     "Client",
     "Consent",
+    "Cortesia",
     "Customer",
     "DiscountCode",
     "DiscountRedemption",

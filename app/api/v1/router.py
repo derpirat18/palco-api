@@ -6,6 +6,7 @@ from app.api.v1 import (
     catalog,
     checkout,
     clients,
+    cortesias,
     health,
     inventory,
     publico,
@@ -19,4 +20,5 @@ api_router.include_router(catalog.router)
 api_router.include_router(inventory.router)
 api_router.include_router(apartados.router)
 api_router.include_router(checkout.router)
+api_router.include_router(cortesias.router)
 api_router.include_router(publico.router)

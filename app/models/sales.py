@@ -401,3 +401,33 @@ class Scan(Base, PKMixin):
         ),
         Index("ix_scans_performance_escaneado", "performance_id", "escaneado_en"),
     )
+
+
+class Cortesia(Base, PKMixin):
+    """Por que y quien otorgo una cortesia (C1).
+
+    La cortesia en si es una orden normal con total $0 y `canal =
+    'cortesia'`: sus butacas pasan por las mismas tres capas que una venta
+    y sus boletos son boletos de verdad, con QR. Aqui queda lo que la orden
+    no dice: el motivo, quien la dio y, si se revoco, quien y cuando.
+    """
+
+    __tablename__ = "cortesias"
+
+    order_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    motivo: Mapped[str] = mapped_column(String(120), nullable=False)
+    otorgada_por: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    otorgada_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    revocada_por: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    revocada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

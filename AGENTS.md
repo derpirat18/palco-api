@@ -178,6 +178,9 @@ Detalle en ADR 0010. Lo que no se rompe:
   la bandeja (`.\make.ps1 bandeja`, ADR 0015) a partir de
   `outbox_events`, con reintentos. Un tipo nuevo de aviso se agrega como
   otro "atiende" de `BandejaService`, nunca llamando al cartero directo.
+- Una cortesía es una orden de $0 con `canal = 'cortesia'` sobre el
+  mismo inventario (ADR 0018). Nace pagada **y con `capturada_en`**: una
+  orden pagada sin captura es una que el barrido intenta cobrar.
 - El barrido (`.\make.ps1 barrido`) termina lo que queda a medias:
   órdenes vencidas, apartados vencidos, capturas pendientes y avisos de
   capturas atrasadas. Nunca cierra una orden sin cancelar antes en
