@@ -15,8 +15,10 @@ import asyncio
 import logging
 
 from app.core.db import SessionLocal, engine
+from app.core.redis import redis_client
 from app.services.bandeja import BandejaService
 from app.services.correo import cartero_por_configuracion
+from app.services.latidos import latir
 
 log = logging.getLogger("palco.bandeja")
 
@@ -29,6 +31,7 @@ async def main(una_vez: bool, cada: int) -> None:
                 r = await servicio.una_vuelta()
                 if r.hubo_algo():
                     log.info("Bandeja: %s", r)
+                await latir(redis_client, "bandeja")
             except Exception:
                 # Base caida un momento: se reintenta en la siguiente vuelta.
                 log.exception("Bandeja: la vuelta fallo")
@@ -36,6 +39,7 @@ async def main(una_vez: bool, cada: int) -> None:
                 return
             await asyncio.sleep(cada)
     finally:
+        await redis_client.aclose()
         await engine.dispose()
 
 

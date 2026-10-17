@@ -161,18 +161,37 @@ async def test_lo_tuyo_se_marca_aunque_el_mapa_venga_del_cache(
     assert con_mio[s[2]] in ("libre", "ocupada")
 
 
-async def test_el_cache_dura_poco_y_luego_se_ve_lo_nuevo(api, db, esc, redis_test):
+async def test_el_cache_guarda_y_luego_se_ve_lo_nuevo(
+    api, db, esc, redis_test, monkeypatch
+):
+    """Sin depender del reloj: en un servidor lento (el de GitHub) 2 s se
+    pueden ir entre dos consultas. Se alarga el cache durante la prueba y
+    el vencimiento se simula borrando la llave."""
+    from app.api.v1 import publico
+
+    monkeypatch.setattr(publico, "CACHE_DEL_MAPA_MS", 60_000)
     pid, s = esc["performance_id"], esc["seat_ids"]
     await mapa(api, pid)
     await poner(db, pid, s[0], estado="vendido")
 
     cacheado = estados((await mapa(api, pid)).json())
-    await redis_test.delete(f"mapa:{pid}")  # lo que hacen los 2 s
+    await redis_test.delete(f"mapa:{pid}")  # lo que hace el vencimiento
     fresco = estados((await mapa(api, pid)).json())
 
     assert cacheado[s[0]] == "libre"
     assert fresco[s[0]] == "ocupada"
-    assert 0 < await redis_test.pttl(f"mapa:{pid}") <= 2000
+    assert 0 < await redis_test.pttl(f"mapa:{pid}") <= 60_000
+
+
+async def test_el_cache_dura_dos_segundos(api, esc, redis_test):
+    from app.api.v1.publico import CACHE_DEL_MAPA_MS
+
+    await mapa(api, esc["performance_id"])
+
+    assert CACHE_DEL_MAPA_MS == 2000
+    restante = await redis_test.pttl(f"mapa:{esc['performance_id']}")
+    # -2: ya vencio (un servidor muy lento); si existe, nunca dura mas de 2 s.
+    assert restante == -2 or 0 < restante <= 2000
 
 
 async def test_sin_redis_se_consulta_la_base(api, esc):

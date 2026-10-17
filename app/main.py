@@ -16,6 +16,7 @@ from app.core.fallas import (
     cuerpo_de_error_http,
     cuerpo_de_validacion,
 )
+from app.core.proteccion import EncabezadosDeSeguridad, LimiteDeCuerpo
 from app.core.redis import redis_client
 from app.core.respuestas import JSONUtf8
 
@@ -35,8 +36,11 @@ app = FastAPI(
     default_response_class=JSONUtf8,
 )
 
-# Primero el que atrapa fallas y despues CORS: el ultimo agregado queda por
-# fuera, asi la respuesta de una falla tambien lleva sus encabezados de CORS.
+# El ultimo agregado queda por fuera. De fuera hacia dentro:
+#   encabezados de seguridad -> CORS -> atrapa fallas -> limite de cuerpo
+# Asi toda respuesta, tambien un 500 o un 413, lleva CORS (el navegador
+# puede leerla) y los encabezados de seguridad.
+app.add_middleware(LimiteDeCuerpo)
 app.add_middleware(AtrapaFallas)
 app.add_middleware(
     CORSMiddleware,
@@ -45,6 +49,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(EncabezadosDeSeguridad)
 
 
 @app.exception_handler(ErrorDeDominio)

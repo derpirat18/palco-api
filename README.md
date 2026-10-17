@@ -28,6 +28,14 @@ make migrar
 make correr
 ```
 
+Sondas de salud:
+
+| Ruta | Para quién | Responde |
+|---|---|---|
+| `/api/v1/health` | Balanceador | 200 si el proceso vive |
+| `/api/v1/health/ready` | Despliegue | Estado de Postgres y Redis |
+| `/api/v1/health/trabajadores` | Monitor externo | 200 si el barrido y la bandeja dan vueltas, 503 si alguno se paró. En local da 503 mientras no los tengas corriendo |
+
 Documentación interactiva en `http://localhost:8000/docs`. Los correos
 que manda la app en local no salen a internet: se ven en el buzón de
 pruebas, `http://localhost:8025`.

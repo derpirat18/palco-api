@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     # CDN). Con 0 se ignora X-Forwarded-For: cualquiera puede escribirlo.
     PROXIES_DE_CONFIANZA: int = 0
 
+    # --- Proteccion (B12) ---
+    # Tope de una peticion. Un mapa de 50,000 butacas en CSV cabe holgado.
+    MAX_CUERPO_BYTES: int = 4 * 1024 * 1024
+
     # --- Sala de espera (ADR 0017) ---
     # Apagada, la puerta del turno no consulta nada. Encendida, exige pase
     # solo en los eventos con la sala activa.

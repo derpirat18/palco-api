@@ -22,6 +22,7 @@ from app.core.db import SessionLocal, engine
 from app.core.redis import redis_client
 from app.services.barrido import BarridoService
 from app.services.holds import HoldService
+from app.services.latidos import latir
 from app.services.pasarela import pasarela_de_stripe
 
 log = logging.getLogger("palco.barrido")
@@ -45,6 +46,8 @@ async def una_vuelta() -> None:
             r = await servicio.una_vuelta()
         finally:
             await conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": CANDADO})
+    # Solo late quien de verdad barrio: el que se salto la vuelta no cuenta.
+    await latir(redis_client, "barrido")
     if r.hubo_algo():
         log.info("Barrido: %s", r)
 
