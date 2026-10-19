@@ -14,7 +14,8 @@ dependencies = [
     "pydantic-settings>=2.6",
     "redis>=5.2",
     "python-jose[cryptography]>=3.3",
-    "passlib[bcrypt]>=1.7",
+    # Contrasenas del personal. Se usa directo, sin passlib (app/core/security.py).
+    "bcrypt>=4.1",
     "stripe>=16.0",
     "httpx>=0.28",
     "phonenumbers>=8.13",

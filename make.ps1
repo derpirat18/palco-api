@@ -8,11 +8,12 @@
   .\make.ps1 migrar
   .\make.ps1 correr
   .\make.ps1 test
+  .\make.ps1 imagen
   .\make.ps1 migracion -m "agrega tabla de cortesias"
 #>
 param(
   [Parameter(Position = 0)]
-  [ValidateSet('ayuda','instalar','arriba','abajo','migrar','migracion','correr','barrido','bandeja','test','lint','fmt','usuario')]
+  [ValidateSet('ayuda','instalar','arriba','abajo','migrar','migracion','correr','barrido','bandeja','imagen','test','lint','fmt','usuario')]
   [string]$Tarea = 'ayuda',
 
   [Alias('m')]
@@ -82,6 +83,7 @@ switch ($Tarea) {
     Write-Host "  correr     " -NoNewline -ForegroundColor Cyan; Write-Host "arranca la API en http://localhost:8000"
     Write-Host "  barrido    " -NoNewline -ForegroundColor Cyan; Write-Host "cierra apartados y ordenes vencidas, reintenta cobros (-UnaVez: una vuelta)"
     Write-Host "  bandeja    " -NoNewline -ForegroundColor Cyan; Write-Host "manda los correos con boletos; se ven en http://localhost:8025 (-UnaVez: una vuelta)"
+    Write-Host "  imagen     " -NoNewline -ForegroundColor Cyan; Write-Host "construye la imagen de produccion y la corre en contenedores: API en http://localhost:8001"
     Write-Host "  test       " -NoNewline -ForegroundColor Cyan; Write-Host "corre las pruebas"
     Write-Host "  lint       " -NoNewline -ForegroundColor Cyan; Write-Host "revisa estilo"
     Write-Host "  fmt        " -NoNewline -ForegroundColor Cyan; Write-Host "formatea"
@@ -159,7 +161,30 @@ switch ($Tarea) {
     Write-Host "Servicios arriba." -ForegroundColor Green
   }
 
-  'abajo'  { docker compose down }
+  # --profile imagen: detiene tambien los contenedores de `imagen`.
+  'abajo'  { docker compose --profile imagen down }
+
+  'imagen' {
+    docker info *> $null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host ""
+      Write-Host "Docker Desktop no esta corriendo." -ForegroundColor Red
+      Write-Host "Abrelo y espera a que diga 'Engine running' en verde." -ForegroundColor Yellow
+      Write-Host ""
+      exit 1
+    }
+    # La misma imagen que correra en AWS: API, barrido y bandeja en
+    # contenedores, con las migraciones antes. Usa tu Postgres, Redis y
+    # buzon de `arriba`, y tu .env (sin copiarlo a la imagen).
+    docker compose --profile imagen up --build -d
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host "No se pudo construir o levantar la imagen." -ForegroundColor Red
+      exit 1
+    }
+    Write-Host ""
+    Write-Host "Imagen arriba. API: http://localhost:8001/api/v1/health" -ForegroundColor Green
+    Write-Host "Ver procesos: docker compose --profile imagen ps" -ForegroundColor Cyan
+  }
 
   'migrar' {
     Requiere-Venv

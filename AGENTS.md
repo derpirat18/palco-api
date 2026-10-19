@@ -245,6 +245,21 @@ o cambia de significado, la migración rescata o convierte lo que ya hay
 antes, y falla con un mensaje claro si no puede (ejemplo:
 `20261014_1622_uuid_consentimientos_telefono.py`).
 
+En AWS las migraciones corren como tarea aparte **antes** de cambiar el
+código, mientras la versión anterior sigue atendiendo. Toda migración
+tiene que convivir con el código anterior: primero se agrega (columna
+nueva con valor por omisión o nula), en otra entrega se usa y hasta una
+tercera se quita lo viejo. Renombrar o borrar en un solo paso tumba la
+versión que sigue corriendo.
+
+## Imagen y dependencias
+
+- Una sola imagen (`Dockerfile`) para API, barrido, bandeja y
+  migraciones; cambia solo el comando. Nada de secretos dentro: todo
+  entra por variables de entorno.
+- `requirements.lock` fija las versiones de la imagen. Una dependencia
+  nueva va en `pyproject.toml` **y** se regenera el lock con Python 3.12.
+
 ## Pruebas
 
 ```bash

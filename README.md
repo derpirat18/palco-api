@@ -58,6 +58,21 @@ Primer usuario, para poder entrar:
 Pruebas y estilo: `.\make.ps1 test` y `.\make.ps1 lint` (o `make test`,
 `make lint`).
 
+### La imagen de producción en tu máquina
+
+```powershell
+.\make.ps1 imagen
+```
+
+Construye la misma imagen que corre en AWS (`Dockerfile`) y levanta en
+contenedores las migraciones, la API (`http://localhost:8001`), el barrido
+y la bandeja, con tu `.env` y los servicios de `arriba`. El `.env` no
+entra a la imagen. `.\make.ps1 abajo` detiene todo.
+
+Las versiones exactas de la imagen están en `requirements.lock`. Si
+cambias una dependencia en `pyproject.toml`, regenéralo (ver su
+encabezado).
+
 ## Cómo está organizado
 
 ```

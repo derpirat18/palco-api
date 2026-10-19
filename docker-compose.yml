@@ -1,3 +1,18 @@
+# Lo comun a los contenedores de la imagen de Palco (perfil `imagen`).
+x-palco: &palco
+  profiles: ["imagen"]
+  build: .
+  image: palco-api:local
+  # Sin esto, los trabajadores (PID 1) ignoran la senal de detenerse.
+  init: true
+  env_file: .env
+  environment:
+    # Dentro de Docker, los servicios se llaman por su nombre, no localhost.
+    DATABASE_URL: postgresql://palco:palco@db:5432/palco_dev
+    REDIS_URL: redis://redis:6379/0
+    CORREO_SMTP_HOST: mailpit
+    CORREO_SMTP_PUERTO: "1025"
+
 services:
   db:
     image: postgres:16-alpine
@@ -31,6 +46,40 @@ services:
   mailpit:
     image: axllent/mailpit:v1.20.5
     ports: ["1025:1025", "8025:8025"]
+
+  # --- La imagen de produccion, corriendo en tu maquina (I1) ---------------
+  # Solo con el perfil `imagen`:  .\make.ps1 imagen
+  # (docker compose --profile imagen up --build -d). Es la misma imagen que
+  # correra en AWS; aqui toma tu .env y apunta a los servicios de arriba.
+  # La API queda en el puerto 8001 para no chocar con `.\make.ps1 correr`.
+  migrar:
+    <<: *palco
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  api:
+    <<: *palco
+    ports: ["8001:8000"]
+    depends_on:
+      migrar: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3)"]
+      interval: 10s
+      retries: 3
+
+  barrido:
+    <<: *palco
+    command: ["python", "-m", "app.workers.barrido"]
+    depends_on:
+      migrar: {condition: service_completed_successfully}
+
+  bandeja:
+    <<: *palco
+    command: ["python", "-m", "app.workers.bandeja"]
+    depends_on:
+      migrar: {condition: service_completed_successfully}
 
 volumes:
   pgdata:

@@ -1,0 +1,29 @@
+# Lo que NO entra a la imagen. Primero lo que nunca debe salir de tu maquina.
+.env
+.env.*
+!.env.example
+
+# Entornos, caches y control de versiones
+.git
+.github
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+*.egg-info
+
+# Lo que la imagen no necesita para correr
+tests
+docs
+# El alta del primer admin (scripts/crear_usuario.py) si entra.
+scripts/postgres
+Makefile
+make.ps1
+docker-compose.yml
+Dockerfile
+.dockerignore
+*.md
+pytest.ini
+build
