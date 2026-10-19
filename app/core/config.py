@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     DB_ECHO: bool = False
+    # Cifrar la conexion a PostgreSQL. RDS la exige (rds.force_ssl=1 desde
+    # PostgreSQL 15); el Postgres local de Docker no la ofrece.
+    DB_SSL: bool = False
 
     # --- Redis ---
     REDIS_URL: RedisDsn
@@ -217,6 +220,23 @@ class Settings(BaseSettings):
                 "prueba de Cloudflare: esas aprueban a cualquiera."
             )
         return self
+
+    @model_validator(mode="after")
+    def _base_cifrada_fuera_de_local(self) -> "Settings":
+        """Fuera de local la base guarda datos de compradores y ordenes."""
+        if self.ENTORNO != "local" and not self.DB_SSL:
+            raise ValueError("Fuera de ENTORNO=local, DB_SSL debe ser true.")
+        return self
+
+    @property
+    def db_connect_args_async(self) -> dict:
+        """Argumentos de conexion para asyncpg (la app)."""
+        return {"ssl": "require"} if self.DB_SSL else {}
+
+    @property
+    def db_connect_args_sync(self) -> dict:
+        """Argumentos de conexion para psycopg (Alembic)."""
+        return {"sslmode": "require"} if self.DB_SSL else {}
 
     @property
     def db_url_async(self) -> str:

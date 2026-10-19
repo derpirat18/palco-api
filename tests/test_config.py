@@ -105,6 +105,7 @@ def test_fuera_de_local_los_limites_y_el_cifrado_son_obligatorios():
     seguro = {
         "LIMITES_ACTIVOS": True,
         "CORREO_SMTP_STARTTLS": True,
+        "DB_SSL": True,
         "TURNSTILE_SECRET_KEY": "0x4AAAAAAA-secreta",
         "TURNSTILE_SITE_KEY": "0x4AAAAAAA-publica",
     }
@@ -126,7 +127,7 @@ def test_fuera_de_local_los_limites_y_el_cifrado_son_obligatorios():
 # --------------------------------------------------------------------------
 
 LLAVES = {"SECRET_KEY": LLAVE_A, "TICKET_SIGNING_KEY": LLAVE_B}
-SEGURO = {"LIMITES_ACTIVOS": True, "CORREO_SMTP_STARTTLS": True}
+SEGURO = {"LIMITES_ACTIVOS": True, "CORREO_SMTP_STARTTLS": True, "DB_SSL": True}
 PRUEBA_CF = {
     "TURNSTILE_SECRET_KEY": "1x0000000000000000000000000000000AA",
     "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
@@ -171,3 +172,24 @@ def test_produccion_no_acepta_llaves_de_prueba(prefijo):
 def test_produccion_con_llaves_reales():
     s = construir(ENTORNO="prod", **LLAVES, **SEGURO, **REAL_CF)
     assert s.TURNSTILE_SECRET_KEY == SECRETA
+
+
+# --------------------------------------------------------------------------
+# Base de datos cifrada fuera de local (I3)
+# --------------------------------------------------------------------------
+
+
+def test_fuera_de_local_la_base_va_cifrada():
+    with pytest.raises(ValidationError, match="DB_SSL"):
+        construir(ENTORNO="staging", **LLAVES, **{**SEGURO, "DB_SSL": False}, **REAL_CF)
+
+
+def test_argumentos_de_conexion_segun_db_ssl():
+    local = construir(**LLAVES)
+    assert local.db_connect_args_async == {}
+    assert local.db_connect_args_sync == {}
+
+    nube = construir(ENTORNO="staging", **LLAVES, **SEGURO, **REAL_CF)
+    # asyncpg (la app) y psycopg (Alembic) nombran distinto la misma opcion.
+    assert nube.db_connect_args_async == {"ssl": "require"}
+    assert nube.db_connect_args_sync == {"sslmode": "require"}

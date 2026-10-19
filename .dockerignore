@@ -27,3 +27,4 @@ Dockerfile
 *.md
 pytest.ini
 build
+infra

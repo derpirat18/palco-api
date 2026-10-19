@@ -21,3 +21,10 @@ appendonlydir/
 dump.rdb
 *.rdb
 *.aof
+
+# Terraform: el estado vive en S3 (tiene secretos); el candado .lock.hcl si se sube
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
