@@ -1,13 +1,42 @@
 name: CI
 
+# Cada push y cada pull request pasa por aqui (I2). Dos trabajos en
+# paralelo:
+#
+#   pruebas  estilo, migraciones y las pruebas, con las versiones exactas
+#            de requirements.lock (las mismas de la imagen).
+#   imagen   arma la imagen de produccion, la prueba de verdad (migra,
+#            responde, los trabajadores dan una vuelta, sin secretos ni
+#            root) y confirma que tambien se arma para ARM (Graviton).
+#
+# Cuando haya cuenta de AWS se agregan aqui los despliegues: sandbox solo
+# en cada push a main, produccion con aprobacion. Entraran a AWS con OIDC
+# (permisos temporales), nunca con llaves guardadas en GitHub.
+
 on:
   push:
     branches: [main, develop]
   pull_request:
 
+permissions:
+  contents: read
+
+# Un push nuevo a la misma rama cancela la corrida anterior que siga en
+# curso: solo importa la ultima.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Llaves de mentira, solo para CI. Nunca sirven fuera de aqui.
+  SECRET_KEY: llave_de_integracion_continua_no_sirve_en_produccion
+  TICKET_SIGNING_KEY: firma_de_integracion_continua_no_sirve_en_prod
+  ENTORNO: local
+
 jobs:
   pruebas:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -31,9 +60,6 @@ jobs:
       DATABASE_URL: postgresql://palco:palco@localhost:5432/palco_test
       REDIS_URL: redis://localhost:6379/0
       REDIS_TEST_URL: redis://localhost:6379/15
-      SECRET_KEY: llave_de_integracion_continua_no_sirve_en_produccion
-      TICKET_SIGNING_KEY: firma_de_integracion_continua_no_sirve_en_prod
-      ENTORNO: local
 
     steps:
       - uses: actions/checkout@v4
@@ -43,10 +69,12 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      # -c requirements.lock: las dependencias de la app con las versiones
+      # exactas de la imagen. Lo que se prueba es lo que se despliega.
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -c requirements.lock -e ".[dev]"
 
       - name: Estilo
         run: |
@@ -62,3 +90,97 @@ jobs:
 
       - name: Pruebas
         run: pytest -v
+
+  imagen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: palco
+          POSTGRES_PASSWORD: palco
+          POSTGRES_DB: palco_imagen
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://palco:palco@localhost:5432/palco_imagen
+      REDIS_URL: redis://localhost:6379/0
+      # Lo que cada contenedor recibe del entorno, como lo recibira en AWS.
+      VARIABLES: >-
+        -e ENTORNO -e DATABASE_URL -e REDIS_URL
+        -e SECRET_KEY -e TICKET_SIGNING_KEY
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Armar la imagen (x86) para probarla
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: palco-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Sin secretos, sin root y con el codigo de solo lectura
+        run: |
+          docker run --rm palco-api:ci sh -c '
+            set -e
+            test "$(whoami)" = palco || { echo "Corre como $(whoami), no como palco"; exit 1; }
+            test ! -e /app/.env || { echo "La imagen trae un .env"; exit 1; }
+            if touch /app/escritura 2>/dev/null; then echo "El codigo se puede modificar"; exit 1; fi
+            echo "ok: usuario palco, sin .env, codigo de solo lectura"
+          '
+
+      - name: Migraciones con la imagen
+        run: docker run --rm --network host $VARIABLES palco-api:ci alembic upgrade head
+
+      - name: La API de la imagen responde
+        run: |
+          docker run -d --name api --network host $VARIABLES palco-api:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/api/v1/health/ready | grep -q '"estado":"ok"'; then
+              curl -fsS http://localhost:8000/api/v1/health/ready; echo
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "La API no respondio en 30 segundos:"
+          docker logs api
+          exit 1
+
+      - name: Barrido y bandeja dan una vuelta
+        run: |
+          docker run --rm --network host $VARIABLES palco-api:ci python -m app.workers.barrido --una-vez
+          docker run --rm --network host $VARIABLES palco-api:ci python -m app.workers.bandeja --una-vez
+          curl -fsS http://localhost:8000/api/v1/health/trabajadores; echo
+
+      - name: Detener la API
+        if: always()
+        run: docker rm -f api || true
+
+      # Graviton (ARM) es lo que correra en AWS. Se arma emulado: tarda mas,
+      # pero confirma que ninguna dependencia falta para esa arquitectura.
+      - uses: docker/setup-qemu-action@v3
+
+      - name: Armar para ARM (Graviton) y x86
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
