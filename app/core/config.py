@@ -4,11 +4,16 @@ Todo valor configurable entra por variable de entorno. Nunca hardcodear
 credenciales, llaves de Stripe ni secretos de firma en el codigo.
 """
 
+import re
 from functools import lru_cache
 from typing import Literal
 
 from pydantic import Field, PostgresDsn, RedisDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Llaves de prueba de Cloudflare Turnstile: 1x... aprueba, 2x... rechaza,
+# 3x... responde "token ya usado". Todas tienen esta forma.
+_ES_LLAVE_DE_PRUEBA = re.compile(r"^[0-9]x0{20,}A{2}$")
 
 COMO_GENERAR_LLAVE = (
     'Genera una con: python -c "import secrets; print(secrets.token_urlsafe(48))"'
@@ -74,6 +79,14 @@ class Settings(BaseSettings):
     # Cuantos proxies de confianza hay delante de la API (balanceador,
     # CDN). Con 0 se ignora X-Forwarded-For: cualquiera puede escribirlo.
     PROXIES_DE_CONFIANZA: int = 0
+
+    # --- Verificacion humana: Cloudflare Turnstile (ADR 0019) ---
+    # Sin la secreta, la verificacion esta apagada (local y pruebas). La
+    # publica (sitekey) la lee el front de /publico/configuracion.
+    # Para el sandbox sirven las de prueba de Cloudflare: secreta
+    # 1x0000000000000000000000000000000AA y sitekey 1x00000000000000000000AA.
+    TURNSTILE_SECRET_KEY: str = ""
+    TURNSTILE_SITE_KEY: str = ""
 
     # --- Proteccion (B12) ---
     # Tope de una peticion. Un mapa de 50,000 butacas en CSV cabe holgado.
@@ -170,6 +183,38 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Fuera de ENTORNO=local el correo debe ir cifrado: "
                 "CORREO_SMTP_STARTTLS=true."
+            )
+        return self
+
+    @field_validator("TURNSTILE_SECRET_KEY", "TURNSTILE_SITE_KEY")
+    @classmethod
+    def _sin_espacios(cls, valor: str) -> str:
+        return valor.strip()
+
+    @model_validator(mode="after")
+    def _verificacion_humana(self) -> "Settings":
+        """Las dos llaves van juntas, y produccion no usa las de prueba.
+
+        Con solo la secreta, el servidor exige una verificacion que el
+        front no sabe hacer y nadie podria comprar. Las llaves de prueba
+        de Cloudflare aprueban siempre: en produccion dejarian pasar a
+        cualquier bot.
+        """
+        secreta, publica = self.TURNSTILE_SECRET_KEY, self.TURNSTILE_SITE_KEY
+        if bool(secreta) != bool(publica):
+            raise ValueError(
+                "TURNSTILE_SECRET_KEY y TURNSTILE_SITE_KEY van juntas: "
+                "las dos o ninguna."
+            )
+        if self.ENTORNO != "local" and not secreta:
+            raise ValueError(
+                "Fuera de ENTORNO=local la verificacion humana es obligatoria: "
+                "configura TURNSTILE_SECRET_KEY y TURNSTILE_SITE_KEY."
+            )
+        if self.ENTORNO == "prod" and _ES_LLAVE_DE_PRUEBA.match(secreta):
+            raise ValueError(
+                "En produccion TURNSTILE_SECRET_KEY no puede ser una llave de "
+                "prueba de Cloudflare: esas aprueban a cualquiera."
             )
         return self
 

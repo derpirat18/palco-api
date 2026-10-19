@@ -102,7 +102,12 @@ def test_stripe_vacio_o_real_si_arranca():
 
 def test_fuera_de_local_los_limites_y_el_cifrado_son_obligatorios():
     llaves = {"SECRET_KEY": LLAVE_A, "TICKET_SIGNING_KEY": LLAVE_B}
-    seguro = {"LIMITES_ACTIVOS": True, "CORREO_SMTP_STARTTLS": True}
+    seguro = {
+        "LIMITES_ACTIVOS": True,
+        "CORREO_SMTP_STARTTLS": True,
+        "TURNSTILE_SECRET_KEY": "0x4AAAAAAA-secreta",
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAA-publica",
+    }
 
     assert construir(ENTORNO="prod", **llaves, **seguro).LIMITES_ACTIVOS
 
@@ -114,3 +119,55 @@ def test_fuera_de_local_los_limites_y_el_cifrado_son_obligatorios():
         )
     # En local se pueden apagar, para las pruebas.
     assert not construir(**llaves, LIMITES_ACTIVOS=False).LIMITES_ACTIVOS
+
+
+# --------------------------------------------------------------------------
+# Verificacion humana: Turnstile (ADR 0019)
+# --------------------------------------------------------------------------
+
+LLAVES = {"SECRET_KEY": LLAVE_A, "TICKET_SIGNING_KEY": LLAVE_B}
+SEGURO = {"LIMITES_ACTIVOS": True, "CORREO_SMTP_STARTTLS": True}
+PRUEBA_CF = {
+    "TURNSTILE_SECRET_KEY": "1x0000000000000000000000000000000AA",
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+}
+SECRETA = "0x4AAAAAAA-secreta-de-pruebas"
+SITE_KEY = "0x4AAAAAAA-publica-de-pruebas"
+REAL_CF = {"TURNSTILE_SECRET_KEY": SECRETA, "TURNSTILE_SITE_KEY": SITE_KEY}
+
+
+def test_las_dos_llaves_van_juntas():
+    with pytest.raises(ValidationError, match="van juntas"):
+        construir(**LLAVES, TURNSTILE_SECRET_KEY=SECRETA)
+    with pytest.raises(ValidationError, match="van juntas"):
+        construir(**LLAVES, TURNSTILE_SITE_KEY=SITE_KEY)
+
+
+def test_en_local_puede_ir_apagada():
+    assert construir(**LLAVES).TURNSTILE_SECRET_KEY == ""
+
+
+@pytest.mark.parametrize("entorno", ["dev", "staging", "prod"])
+def test_fuera_de_local_es_obligatoria(entorno):
+    with pytest.raises(ValidationError, match="verificacion humana es obligatoria"):
+        construir(ENTORNO=entorno, **LLAVES, **SEGURO)
+
+
+def test_el_sandbox_puede_usar_las_llaves_de_prueba():
+    s = construir(ENTORNO="staging", **LLAVES, **SEGURO, **PRUEBA_CF)
+    assert s.TURNSTILE_SECRET_KEY.startswith("1x")
+
+
+@pytest.mark.parametrize("prefijo", ["1x", "2x", "3x"])
+def test_produccion_no_acepta_llaves_de_prueba(prefijo):
+    llaves_cf = {
+        **PRUEBA_CF,
+        "TURNSTILE_SECRET_KEY": prefijo + "0000000000000000000000000000000AA",
+    }
+    with pytest.raises(ValidationError, match="llave de prueba"):
+        construir(ENTORNO="prod", **LLAVES, **SEGURO, **llaves_cf)
+
+
+def test_produccion_con_llaves_reales():
+    s = construir(ENTORNO="prod", **LLAVES, **SEGURO, **REAL_CF)
+    assert s.TURNSTILE_SECRET_KEY == SECRETA

@@ -11,8 +11,13 @@ from redis.asyncio.client import Redis
 from redis.exceptions import RedisError
 
 from app.api.deps import DB
+from app.core.config import settings
 from app.core.redis import redis_client
-from app.schemas.publico import EventoPublicoResponse, MapaPublicoResponse
+from app.schemas.publico import (
+    ConfiguracionPublicaResponse,
+    EventoPublicoResponse,
+    MapaPublicoResponse,
+)
 from app.services.limites import limite
 from app.services.publico import PublicoService
 
@@ -29,6 +34,23 @@ CACHE_DEL_MAPA_MS = 2000
 def get_redis_publico() -> Redis:
     """Dependencia para que las pruebas usen su propio Redis."""
     return redis_client
+
+
+@router.get(
+    "/configuracion",
+    response_model=ConfiguracionPublicaResponse,
+    dependencies=[limite("publico")],
+)
+async def configuracion_publica() -> dict:
+    """Llaves publicas por entorno: el front no las lleva escritas.
+
+    La sitekey de Turnstile es distinta en sandbox y en produccion; asi el
+    mismo front sirve en los dos.
+    """
+    site_key = settings.TURNSTILE_SITE_KEY or None
+    return {
+        "verificacion_humana": {"activa": site_key is not None, "site_key": site_key}
+    }
 
 
 @router.get(

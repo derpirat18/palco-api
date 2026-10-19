@@ -172,6 +172,10 @@ Detalle en ADR 0010. Lo que no se rompe:
 - Empezar un apartado pasa por la puerta del turno (`verificar_turno`,
   ADR 0017). Una ruta nueva que reserve lugares también tiene que pasar
   por ella, o la sala de espera se brinca.
+- Empezar un apartado también pide la verificación humana de Turnstile
+  (`verificar_humano`, ADR 0019). Si Cloudflare falla se deja pasar y
+  se avisa: nunca se le bloquea la compra a una persona por una falla
+  nuestra. Las llaves de prueba de Cloudflare nunca van en producción.
 - Toda ruta pública nueva lleva su `limite("grupo")` (ADR 0016). Una
   ruta sin límite es la puerta que un bot va a encontrar.
 - Ningún correo sale desde una petición ni dentro del cobro. Lo manda

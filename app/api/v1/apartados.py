@@ -21,6 +21,7 @@ from app.services.limites import (
     soltar_apartado,
 )
 from app.services.turnos import verificar_turno
+from app.services.verificacion import Verificacion, verificar_humano
 
 router = APIRouter(prefix="/performances", tags=["apartados"])
 
@@ -46,7 +47,9 @@ async def apartar(
     holds: Holds,
     request: Request,
     redis: RedisLimites,
+    verificador: Verificacion,
     turno: Annotated[str | None, Header(alias="X-Palco-Turno")] = None,
+    verificacion: Annotated[str | None, Header(alias="X-Palco-Verificacion")] = None,
 ) -> ApartadoResponse:
     """Aparta butacas. Repetirla con el mismo `hold_id` es seguro.
 
@@ -55,8 +58,12 @@ async def apartar(
 
     Con la sala de espera activa, empezar un apartado exige el pase del
     turno en `X-Palco-Turno` (ADR 0017).
+
+    Empezar un apartado exige tambien la verificacion humana de Turnstile
+    en `X-Palco-Verificacion` (ADR 0019).
     """
     await verificar_turno(db, redis, performance_id, datos.hold_id.hex, turno)
+    await verificar_humano(redis, verificador, request, datos.hold_id.hex, verificacion)
     await registrar_apartado(redis, request, datos.hold_id.hex)
     estado = await ApartadoService(db, holds).apartar(
         performance_id, datos.seat_ids, datos.hold_id.hex

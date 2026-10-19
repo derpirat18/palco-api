@@ -92,3 +92,15 @@ class MapaPublicoResponse(BaseModel):
     butacas: list[ButacaDelMapaResponse]
 
     model_config = {"from_attributes": True}
+
+
+class VerificacionHumanaResponse(BaseModel):
+    # Con activa=false el front no muestra el widget de Turnstile.
+    activa: bool
+    site_key: str | None
+
+
+class ConfiguracionPublicaResponse(BaseModel):
+    """Lo que el front necesita saber del servidor antes de vender."""
+
+    verificacion_humana: VerificacionHumanaResponse
