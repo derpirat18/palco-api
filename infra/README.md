@@ -9,6 +9,7 @@ en sandbox es lo mismo que llega a producción, solo cambian los tamaños.
 | `red.tf` | VPC en 2 zonas: subredes públicas (balanceador, contenedores) y privadas (base, Valkey) |
 | `seguridad.tf` | Quién habla con quién; todo lo demás cerrado |
 | `datos.tf` | PostgreSQL 16 (RDS) y Valkey (ElastiCache), cifrados |
+| `correo.tf` | Usuario de SES que solo puede mandar desde el remitente; su llave SMTP va directo a Parameter Store |
 | `secretos.tf` | Parameter Store: los que genera Terraform y los que pone una persona |
 | `imagenes.tf` | ECR con etiquetas inmutables |
 | `cdn.tf` | CloudFront: HTTPS gratis (`*.cloudfront.net`) sin dominio propio, sin caché |
