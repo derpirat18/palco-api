@@ -1,5 +1,11 @@
-# Balanceador: la unica puerta de entrada. Con certificado, HTTP redirige a
-# HTTPS; sin certificado (sandbox sin dominio), atiende HTTP.
+# Balanceador. Sin CloudFront es la puerta de entrada: con certificado, HTTP
+# redirige a HTTPS; sin certificado, atiende HTTP.
+#
+# Con CloudFront (cdn.tf), el balanceador solo atiende a NUESTRA
+# distribucion: el grupo de seguridad deja entrar solo a CloudFront, y la
+# regla de abajo exige un encabezado secreto que solo nuestra distribucion
+# conoce (cualquier otra cuenta de AWS podria apuntar su propio CloudFront
+# aqui). Lo demas recibe 404.
 #
 # Tiempo de inactividad de 60 s: la API mantiene conexiones 75 s
 # (--timeout-keep-alive en el Dockerfile). Si fuera al reves, el balanceador
@@ -49,8 +55,17 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    type             = local.con_https ? "redirect" : "forward"
-    target_group_arn = local.con_https ? null : aws_lb_target_group.api.arn
+    type             = local.con_https ? "redirect" : (var.con_cloudfront ? "fixed-response" : "forward")
+    target_group_arn = local.con_https || var.con_cloudfront ? null : aws_lb_target_group.api.arn
+
+    dynamic "fixed_response" {
+      for_each = !local.con_https && var.con_cloudfront ? [1] : []
+      content {
+        content_type = "application/json"
+        status_code  = "404"
+        message_body = jsonencode({ error = { codigo = "no_encontrado", mensaje = "No encontramos lo que buscas.", detalle = {} } })
+      }
+    }
 
     dynamic "redirect" {
       for_each = local.con_https ? [1] : []
@@ -73,6 +88,28 @@ resource "aws_lb_listener" "https" {
   certificate_arn   = var.certificado_arn
 
   default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.api.arn
+  }
+}
+
+# Con CloudFront: solo pasa lo que trae el encabezado secreto de nuestra
+# distribucion. Va en el escuchador que usa CloudFront (HTTP sin
+# certificado; HTTPS cuando haya dominio).
+resource "aws_lb_listener_rule" "desde_cloudfront" {
+  count = var.con_cloudfront ? 1 : 0
+
+  listener_arn = local.con_https ? aws_lb_listener.https[0].arn : aws_lb_listener.http.arn
+  priority     = 10
+
+  condition {
+    http_header {
+      http_header_name = local.encabezado_origen
+      values           = [random_password.origen.result]
+    }
+  }
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api.arn
   }

@@ -113,6 +113,12 @@ variable "turnstile_site_key" {
   type        = string
 }
 
+variable "con_cloudfront" {
+  description = "CloudFront delante del balanceador: HTTPS sin dominio propio y el balanceador cerrado al publico."
+  type        = bool
+  default     = true
+}
+
 variable "certificado_arn" {
   description = "Certificado de ACM para HTTPS. Vacio = solo HTTP (sandbox sin dominio todavia)."
   type        = string

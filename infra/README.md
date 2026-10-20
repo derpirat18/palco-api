@@ -11,7 +11,8 @@ en sandbox es lo mismo que llega a producción, solo cambian los tamaños.
 | `datos.tf` | PostgreSQL 16 (RDS) y Valkey (ElastiCache), cifrados |
 | `secretos.tf` | Parameter Store: los que genera Terraform y los que pone una persona |
 | `imagenes.tf` | ECR con etiquetas inmutables |
-| `balanceador.tf` | La única entrada; HTTPS cuando haya certificado |
+| `cdn.tf` | CloudFront: HTTPS gratis (`*.cloudfront.net`) sin dominio propio, sin caché |
+| `balanceador.tf` | Detrás de CloudFront, solo atiende a nuestra distribución (encabezado secreto); HTTPS cuando haya certificado |
 | `contenedores.tf` | ECS Fargate: API (autoescala), barrido, bandeja y la tarea de migrar |
 
 ## Antes de la primera vez

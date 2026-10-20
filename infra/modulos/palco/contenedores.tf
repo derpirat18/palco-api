@@ -104,7 +104,7 @@ locals {
       DB_POOL_SIZE              = tostring(var.pool_db.tamano)
       DB_MAX_OVERFLOW           = tostring(var.pool_db.reserva)
       LIMITES_ACTIVOS           = "true"
-      PROXIES_DE_CONFIANZA      = "1" # el balanceador
+      PROXIES_DE_CONFIANZA      = var.con_cloudfront ? "2" : "1" # CloudFront y el balanceador
       SALA_DE_ESPERA_HABILITADA = "false"
       FRONT_URL                 = var.front_url
       CORS_ORIGINS              = jsonencode(var.cors_origenes)

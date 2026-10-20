@@ -1,6 +1,9 @@
 output "url_api" {
   description = "Donde responde la API."
-  value       = "${local.con_https ? "https" : "http"}://${aws_lb.palco.dns_name}/api/v1"
+  value = (var.con_cloudfront
+    ? "https://${aws_cloudfront_distribution.api[0].domain_name}/api/v1"
+    : "${local.con_https ? "https" : "http"}://${aws_lb.palco.dns_name}/api/v1"
+  )
 }
 
 output "repositorio_imagenes" {

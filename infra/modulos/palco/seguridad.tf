@@ -1,6 +1,7 @@
 # Quien puede hablar con quien. Todo lo que no esta aqui esta cerrado.
 #
-#   internet  -> balanceador     80 / 443
+#   internet  -> balanceador     80 / 443 (sin CloudFront)
+#   CloudFront -> balanceador    80       (con CloudFront: nadie mas entra)
 #   balanceador -> contenedores  8000
 #   contenedores -> PostgreSQL   5432
 #   contenedores -> Valkey       6379
@@ -13,7 +14,24 @@ resource "aws_security_group" "balanceador" {
   tags        = { Name = "${local.nombre}-balanceador" }
 }
 
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "balanceador_desde_cloudfront" {
+  count = var.con_cloudfront ? 1 : 0
+
+  security_group_id = aws_security_group.balanceador.id
+  description       = "Solo CloudFront"
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+}
+
 resource "aws_vpc_security_group_ingress_rule" "balanceador_http" {
+  count = var.con_cloudfront ? 0 : 1
+
   security_group_id = aws_security_group.balanceador.id
   description       = "HTTP desde internet"
   cidr_ipv4         = "0.0.0.0/0"
@@ -23,6 +41,8 @@ resource "aws_vpc_security_group_ingress_rule" "balanceador_http" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "balanceador_https" {
+  count = var.con_cloudfront ? 0 : 1
+
   security_group_id = aws_security_group.balanceador.id
   description       = "HTTPS desde internet"
   cidr_ipv4         = "0.0.0.0/0"
