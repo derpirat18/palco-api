@@ -20,7 +20,9 @@ param(
   [string]$Region = 'us-east-2',
   [string]$Repositorio = 'palco-sandbox'
 )
-$ErrorActionPreference = 'Stop'
+# Sin 'Stop' a proposito: en PowerShell 5.1 cualquier aviso que un programa
+# (aws, docker) escriba en su salida de errores se volveria excepcion aunque
+# el programa termine bien. Cada paso revisa $LASTEXITCODE.
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
 if (git status --porcelain) {
@@ -33,7 +35,7 @@ if ($LASTEXITCODE -ne 0) { throw "Sin permiso de AWS. Corre primero: aws login -
 $registro = "$($cuenta.Trim()).dkr.ecr.$Region.amazonaws.com"
 $imagen = "$registro/${Repositorio}:$tag"
 
-aws ecr describe-images --profile $Perfil --region $Region --repository-name $Repositorio --image-ids "imageTag=$tag" *> $null
+cmd /c "aws ecr describe-images --profile $Perfil --region $Region --repository-name $Repositorio --image-ids imageTag=$tag >nul 2>&1"
 if ($LASTEXITCODE -eq 0) {
   Write-Host "La imagen $tag ya esta en ECR. No hay nada que subir." -ForegroundColor Yellow
   Write-Host "imagen_tag=$tag"
