@@ -114,3 +114,15 @@ output "ruta_secretos" {
 output "comando_migrar" {
   value = module.palco.comando_migrar
 }
+
+output "url_front" {
+  value = module.palco.url_front
+}
+
+output "bucket_front" {
+  value = module.palco.bucket_front
+}
+
+output "distribucion" {
+  value = module.palco.distribucion
+}
