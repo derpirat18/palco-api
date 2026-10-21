@@ -141,11 +141,15 @@ class BandejaService:
             else:
                 r.reintentos += 1
                 valores["reintentar_en"] = func.now() + espera_tras(intentos)
+                # Con el motivo desde el primer intento: un correo rechazado
+                # (p. ej. SES en modo de pruebas) se entiende sin esperar a
+                # que se agoten los reintentos.
                 log.warning(
-                    "Bandeja: %s de %s fallo (intento %d), se reintenta.",
+                    "Bandeja: %s de %s fallo (intento %d), se reintenta: %s",
                     tipo,
                     agregado,
                     intentos,
+                    error,
                 )
             await db.execute(
                 update(OutboxEvent).where(OutboxEvent.id == ident).values(**valores)
