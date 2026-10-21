@@ -16,8 +16,22 @@
 #
 # Para rotar la llave: terraform apply -replace=module.palco.aws_iam_access_key.correo
 # y reiniciar bandeja (force-new-deployment).
+#
+# SES no esta en todas las regiones (no en Mexico, mx-central-1). El correo
+# sale de la region del proveedor aws.correo, que el entorno elige: en
+# sandbox es el mismo; en produccion en Mexico, Ohio. La identidad, la
+# salida del modo de pruebas y el permiso de SES son de ESA region.
+#
+# La llave se crea con aws.correo porque la contrasena SMTP de SES se deriva
+# con la region del proveedor: con otra region, SES la rechaza.
+
+data "aws_region" "correo" {
+  provider = aws.correo
+}
 
 locals {
+  region_correo = data.aws_region.correo.region
+
   # "Palco <boletos@palco.mx>" -> boletos@palco.mx y palco.mx
   correo_de_remitente  = regex("[^<\\s]+@[^>\\s]+", var.correo_remitente)
   dominio_de_remitente = split("@", local.correo_de_remitente)[1]
@@ -34,8 +48,8 @@ data "aws_iam_policy_document" "mandar_correo" {
     actions = ["ses:SendRawEmail"]
     # Sirve igual si se verifico el correo o el dominio completo.
     resources = [
-      "arn:aws:ses:${data.aws_region.actual.region}:${data.aws_caller_identity.actual.account_id}:identity/${local.correo_de_remitente}",
-      "arn:aws:ses:${data.aws_region.actual.region}:${data.aws_caller_identity.actual.account_id}:identity/${local.dominio_de_remitente}",
+      "arn:aws:ses:${local.region_correo}:${data.aws_caller_identity.actual.account_id}:identity/${local.correo_de_remitente}",
+      "arn:aws:ses:${local.region_correo}:${data.aws_caller_identity.actual.account_id}:identity/${local.dominio_de_remitente}",
     ]
   }
 }
@@ -47,5 +61,6 @@ resource "aws_iam_user_policy" "mandar_correo" {
 }
 
 resource "aws_iam_access_key" "correo" {
-  user = aws_iam_user.correo.name
+  provider = aws.correo
+  user     = aws_iam_user.correo.name
 }

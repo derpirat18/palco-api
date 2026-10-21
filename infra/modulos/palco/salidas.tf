@@ -28,6 +28,8 @@ output "comando_migrar" {
   description = "Corre las migraciones con la imagen desplegada (PowerShell, una linea)."
   value = join(" ", [
     "aws ecs run-task",
+    # Con region: el perfil puede apuntar a otra (produccion vive en Mexico).
+    "--region ${data.aws_region.actual.region}",
     "--cluster ${aws_ecs_cluster.palco.name}",
     "--task-definition ${aws_ecs_task_definition.proceso["migrar"].family}",
     "--launch-type FARGATE",

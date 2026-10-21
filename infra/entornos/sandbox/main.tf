@@ -56,6 +56,12 @@ provider "aws" {
 module "palco" {
   source = "../../modulos/palco"
 
+  # SES si existe en Ohio: el correo sale de la misma region.
+  providers = {
+    aws        = aws
+    aws.correo = aws
+  }
+
   entorno     = "sandbox"
   entorno_app = "staging"
   cidr_vpc    = "10.20.0.0/16"
