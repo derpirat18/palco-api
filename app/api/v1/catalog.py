@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.api.deps import DB, UsuarioActual, requiere_rol, verificar_acceso_cliente
 from app.core.errors import EVENTO_NO_EXISTE, FUNCION_NO_EXISTE, RecursoNoEncontrado
+from app.core.security import PermisoInsuficiente
 from app.models.base import EstadoEvento, EstadoFuncion, RolUsuario
 from app.models.catalog import Event, Performance, SeatMap, Venue, Zone
 from app.schemas.catalog import (
@@ -271,6 +272,16 @@ async def actualizar_evento(
     verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=EVENTO_NO_EXISTE)
 
     cambios = datos.model_dump(exclude_unset=True)
+
+    # El organizador sube y edita su evento; publicarlo o retirarlo lo hace
+    # PSD despues de revisarlo (ADR 0021). Un precio o una fecha mal puestos
+    # no llegan a la venta.
+    if "estado" in cambios and usuario.rol != RolUsuario.ADMIN_PSD:
+        raise PermisoInsuficiente(
+            "La publicación del evento la hace PSD después de revisarlo. "
+            "Avísanos cuando esté listo.",
+            {"campos": ["estado"]},
+        )
 
     if "estado" in cambios and cambios["estado"] not in {e.value for e in EstadoEvento}:
         raise ConflictoDeCatalogo(f"Estado inválido: {cambios['estado']}.")

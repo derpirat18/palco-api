@@ -104,6 +104,8 @@ Toda verificación pasa por `app/api/deps.py`. Un endpoint **nunca**
 compara roles ni `client_id` a mano.
 
 - `requiere_rol(...)` restringe por rol.
+- El organizador crea y edita sus eventos, pero publicarlos o retirarlos
+  (el `estado` del evento) lo hace solo `admin_psd` (ADR 0021).
 - `alcance_cliente` da el `client_id` al que está limitado el usuario, o
   `None` si es admin. Las consultas filtran por ese valor.
 - `verificar_acceso_cliente(usuario, client_id, no_encontrado=...)` se

@@ -401,18 +401,45 @@ async def test_actualizar_evento_rehace_el_slug(cliente_http, usuarios):
     r = await cliente_http.patch(
         f"{API}/events/{evento['id']}",
         headers=auth(tk),
-        json={"nombre": "Nombre nuevo", "estado": "publicado"},
+        json={"nombre": "Nombre nuevo"},
     )
     assert r.status_code == 200, r.text
     assert r.json()["slug"] == "nombre-nuevo"
+    assert r.json()["estado"] == "borrador"
+
+
+async def test_el_organizador_sube_su_evento_y_psd_lo_publica(cliente_http, usuarios):
+    """ADR 0021: el organizador no publica ni retira; PSD revisa y publica."""
+    venue_id = await crear_recinto(cliente_http, token_de(usuarios["admin"]))
+    tk_org = token_de(usuarios["org_a"])
+    evento = await crear_evento(cliente_http, tk_org, venue_id)
+    url = f"{API}/events/{evento['id']}"
+
+    for estado in ("publicado", "archivado"):
+        r = await cliente_http.patch(url, headers=auth(tk_org), json={"estado": estado})
+        assert r.status_code == 403, r.text
+        assert r.json()["error"]["codigo"] == "permiso_insuficiente"
+        assert "PSD" in r.json()["error"]["mensaje"]
+
+    r = await cliente_http.patch(
+        url, headers=auth(token_de(usuarios["admin"])), json={"estado": "publicado"}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["estado"] == "publicado"
+
+    # Publicado, el organizador sigue pudiendo corregir su descripcion.
+    r = await cliente_http.patch(
+        url, headers=auth(tk_org), json={"descripcion": "Con funcion nueva"}
+    )
+    assert r.status_code == 200, r.text
     assert r.json()["estado"] == "publicado"
 
 
 async def test_estado_invalido_se_rechaza(cliente_http, usuarios):
     """Si llegara a la base, el CHECK la tumbaria con un 500."""
     venue_id = await crear_recinto(cliente_http, token_de(usuarios["admin"]))
-    tk = token_de(usuarios["org_a"])
-    evento = await crear_evento(cliente_http, tk, venue_id)
+    tk = token_de(usuarios["admin"])
+    evento = await crear_evento(cliente_http, token_de(usuarios["org_a"]), venue_id)
 
     r = await cliente_http.patch(
         f"{API}/events/{evento['id']}", headers=auth(tk), json={"estado": "inventado"}
