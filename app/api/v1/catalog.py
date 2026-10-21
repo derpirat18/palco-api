@@ -19,6 +19,7 @@ from app.schemas.catalog import (
     FuncionCrear,
     FuncionResponse,
     ImportarMapaRequest,
+    MapaDibujoResponse,
     PrecioResponse,
     PreciosRequest,
     SeatMapResponse,
@@ -174,6 +175,48 @@ async def listar_mapas(
             )
         )
     return salida
+
+
+@router.post(
+    "/seat-maps/vista-previa",
+    response_model=MapaDibujoResponse,
+    dependencies=[solo_psd],
+    tags=["catalogo"],
+)
+async def vista_previa_de_mapa(spec: EspecificacionDeMapa) -> MapaDibujoResponse:
+    """Lo que generaria `seat-maps/generar`, sin guardar nada.
+
+    Usa el mismo generador: lo que se ve en el panel es exactamente lo que
+    se guarda (curvas, nones y pares, butacas omitidas o en kill).
+    """
+    return MapaDibujoResponse.de(generar_mapa(spec))
+
+
+@router.post(
+    "/seat-maps/vista-previa-csv",
+    response_model=MapaDibujoResponse,
+    dependencies=[solo_psd],
+    tags=["catalogo"],
+)
+async def vista_previa_de_csv(datos: ImportarMapaRequest) -> MapaDibujoResponse:
+    """Lo que cargaria `seat-maps/importar`, sin guardar nada."""
+    mapa = importar_mapa_csv(datos.nombre, datos.csv)
+    if datos.ajustar_viewport:
+        mapa.viewport = calcular_viewport(mapa)
+    return MapaDibujoResponse.de(mapa)
+
+
+@router.get(
+    "/seat-maps/{seat_map_id}/dibujo",
+    response_model=MapaDibujoResponse,
+    tags=["catalogo"],
+)
+async def dibujo_de_mapa(
+    seat_map_id: int, db: DB, _: UsuarioActual
+) -> MapaDibujoResponse:
+    """Un mapa guardado, para revisarlo en el panel. Los recintos son
+    compartidos: cualquier persona del personal los puede ver."""
+    return MapaDibujoResponse.de(await CatalogService(db).leer_mapa(seat_map_id))
 
 
 @router.get(

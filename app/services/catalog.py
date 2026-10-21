@@ -29,7 +29,7 @@ from app.models.catalog import (
     Venue,
     Zone,
 )
-from app.services.seat_maps import MapaGenerado
+from app.services.seat_maps import ButacaGenerada, MapaGenerado, ZonaGenerada
 
 
 class ConflictoDeCatalogo(ErrorDeDominio):
@@ -118,6 +118,49 @@ class CatalogService:
             .where(Zone.seat_map_id == seat_map_id, Seat.kill.is_(False))
         )
         return int(total or 0), int(vendibles or 0)
+
+    async def leer_mapa(self, seat_map_id: int) -> MapaGenerado:
+        """Un mapa guardado, con la misma forma que uno recien generado: asi
+        el panel lo dibuja igual que la vista previa."""
+        seat_map = await self.db.get(SeatMap, seat_map_id)
+        if seat_map is None:
+            raise RecursoNoEncontrado("El mapa de butacas no existe.")
+        zonas = list(
+            (
+                await self.db.scalars(
+                    select(Zone)
+                    .where(Zone.seat_map_id == seat_map_id)
+                    .order_by(Zone.orden, Zone.id)
+                )
+            ).all()
+        )
+        por_zona: dict[int, ZonaGenerada] = {
+            z.id: ZonaGenerada(nombre=z.nombre, color=z.color, orden=z.orden)
+            for z in zonas
+        }
+        for seat in (
+            await self.db.scalars(
+                select(Seat)
+                .where(Seat.zone_id.in_(list(por_zona)))
+                .order_by(Seat.zone_id, Seat.id)
+            )
+        ).all():
+            zona = por_zona[seat.zone_id]
+            zona.butacas.append(
+                ButacaGenerada(
+                    zona=zona.nombre,
+                    fila=seat.fila,
+                    numero=seat.numero,
+                    pos_x=seat.pos_x,
+                    pos_y=seat.pos_y,
+                    kill=seat.kill,
+                )
+            )
+        return MapaGenerado(
+            nombre=seat_map.nombre,
+            viewport=seat_map.viewport,
+            zonas=list(por_zona.values()),
+        )
 
     async def mapa_en_uso(self, seat_map_id: int) -> bool:
         """Un mapa con funciones programadas no se puede modificar."""

@@ -7,7 +7,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.services.seat_maps import EspecificacionDeMapa  # noqa: F401  (re-export)
+from app.services.seat_maps import (  # noqa: F401  (re-export)
+    EspecificacionDeMapa,
+    MapaGenerado,
+)
 
 # Tasa de IVA que escribe el organizador: 16, 8, 0 si esta exento... Dos
 # decimales como en la base; mas de 100 es un error de dedo.
@@ -55,6 +58,56 @@ class ZonaResponse(BaseModel):
     orden: int
 
     model_config = {"from_attributes": True}
+
+
+class ButacaDibujoResponse(BaseModel):
+    zona: str
+    fila: str
+    numero: str
+    # Posicion en el dibujo; no es dinero, va como numero.
+    x: float
+    y: float
+    kill: bool
+
+
+class ZonaDibujoResponse(BaseModel):
+    nombre: str
+    color: str | None
+
+
+class MapaDibujoResponse(BaseModel):
+    """Un mapa para dibujarlo en el panel: la vista previa antes de guardar
+    o el mapa ya guardado. Es del personal, no del comprador: incluye las
+    butacas en kill."""
+
+    viewport: dict
+    zonas: list[ZonaDibujoResponse]
+    butacas: list[ButacaDibujoResponse]
+    total_butacas: int
+    total_vendibles: int
+
+    @classmethod
+    def de(cls, mapa: MapaGenerado) -> "MapaDibujoResponse":
+        return cls(
+            viewport=mapa.viewport,
+            zonas=[
+                ZonaDibujoResponse(nombre=z.nombre, color=z.color) for z in mapa.zonas
+            ],
+            butacas=[
+                ButacaDibujoResponse(
+                    zona=b.zona,
+                    fila=b.fila,
+                    numero=b.numero,
+                    x=float(b.pos_x),
+                    y=float(b.pos_y),
+                    kill=b.kill,
+                )
+                for z in mapa.zonas
+                for b in z.butacas
+            ],
+            total_butacas=mapa.total_butacas,
+            total_vendibles=mapa.total_vendibles,
+        )
 
 
 class ImportarMapaRequest(BaseModel):
