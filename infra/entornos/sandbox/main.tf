@@ -85,7 +85,8 @@ module "palco" {
     dias_de_copias = 0
   }
 
-  front_url          = "http://localhost:5173"
+  # La pagina de compra vive en la misma direccion de CloudFront que la API
+  # (front_url vacio). localhost: el front corriendo en la computadora.
   cors_origenes      = ["http://localhost:5173"]
   correo_remitente   = "Palco Sandbox <juanmanuel@psdigital.mx>"
   turnstile_site_key = "1x00000000000000000000AA" # prueba de Cloudflare: aprueba siempre

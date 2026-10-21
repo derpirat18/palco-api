@@ -94,13 +94,15 @@ variable "valkey" {
 # --- Aplicacion --------------------------------------------------------------
 
 variable "front_url" {
-  description = "Base de las ligas de los correos (Ver mis boletos)."
+  description = "Base de las ligas de los correos (Ver mis boletos). Vacio: la direccion de CloudFront, donde vive el front."
   type        = string
+  default     = ""
 }
 
 variable "cors_origenes" {
-  description = "Dominios del front que pueden llamar a la API desde el navegador."
+  description = "Otros dominios que llaman a la API desde el navegador (el front en desarrollo). El de CloudFront no hace falta: es el mismo dominio."
   type        = list(string)
+  default     = []
 }
 
 variable "correo_remitente" {

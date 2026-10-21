@@ -12,7 +12,7 @@ en sandbox es lo mismo que llega a producción, solo cambian los tamaños.
 | `correo.tf` | Usuario de SES que solo puede mandar desde el remitente; su llave SMTP va directo a Parameter Store |
 | `secretos.tf` | Parameter Store: los que genera Terraform y los que pone una persona |
 | `imagenes.tf` | ECR con etiquetas inmutables |
-| `cdn.tf` | CloudFront: HTTPS gratis (`*.cloudfront.net`) sin dominio propio, sin caché |
+| `cdn.tf` | CloudFront: una sola dirección HTTPS para la página de compra (archivos en S3) y la API (`/api/*`, sin caché) |
 | `balanceador.tf` | Detrás de CloudFront, solo atiende a nuestra distribución (encabezado secreto); HTTPS cuando haya certificado |
 | `contenedores.tf` | ECS Fargate: API (autoescala), barrido, bandeja y la tarea de migrar |
 

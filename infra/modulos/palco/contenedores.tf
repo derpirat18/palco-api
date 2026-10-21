@@ -106,7 +106,7 @@ locals {
       LIMITES_ACTIVOS           = "true"
       PROXIES_DE_CONFIANZA      = var.con_cloudfront ? "2" : "1" # CloudFront y el balanceador
       SALA_DE_ESPERA_HABILITADA = "false"
-      FRONT_URL                 = var.front_url
+      FRONT_URL                 = local.front_url
       CORS_ORIGINS              = jsonencode(var.cors_origenes)
       CORREO_SMTP_HOST          = "email-smtp.${data.aws_region.actual.region}.amazonaws.com"
       CORREO_SMTP_PUERTO        = "587"

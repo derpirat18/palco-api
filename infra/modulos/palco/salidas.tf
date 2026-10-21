@@ -35,3 +35,18 @@ output "comando_migrar" {
     "--query 'tasks[0].taskArn' --output text",
   ])
 }
+
+output "url_front" {
+  description = "Donde vive la pagina de compra."
+  value       = var.con_cloudfront ? "https://${aws_cloudfront_distribution.api[0].domain_name}" : ""
+}
+
+output "bucket_front" {
+  description = "A donde se suben los archivos del front (scripts/publicar.ps1 de palco-web)."
+  value       = var.con_cloudfront ? aws_s3_bucket.front[0].bucket : ""
+}
+
+output "distribucion" {
+  description = "Id de CloudFront, para refrescar el front despues de publicarlo."
+  value       = var.con_cloudfront ? aws_cloudfront_distribution.api[0].id : ""
+}
