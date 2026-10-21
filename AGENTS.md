@@ -104,6 +104,9 @@ Toda verificación pasa por `app/api/deps.py`. Un endpoint **nunca**
 compara roles ni `client_id` a mano.
 
 - `requiere_rol(...)` restringe por rol.
+- Las cuentas de organizador y de acceso las crea PSD desde el panel
+  (`/usuarios`), con una contraseña temporal que sale una sola vez. Las de
+  `admin_psd` solo con `scripts/crear_usuario.py`: el panel no reparte acceso total.
 - El organizador crea y edita sus eventos, pero publicarlos o retirarlos
   (el `estado` del evento) lo hace solo `admin_psd` (ADR 0021).
 - `alcance_cliente` da el `client_id` al que está limitado el usuario, o

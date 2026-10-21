@@ -10,6 +10,7 @@ from app.api.v1 import (
     health,
     inventory,
     publico,
+    usuarios,
 )
 
 api_router = APIRouter()
@@ -22,3 +23,4 @@ api_router.include_router(apartados.router)
 api_router.include_router(checkout.router)
 api_router.include_router(cortesias.router)
 api_router.include_router(publico.router)
+api_router.include_router(usuarios.router)
