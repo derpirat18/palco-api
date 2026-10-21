@@ -59,6 +59,56 @@ class EventoPublicoResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TarjetaDeEventoResponse(BaseModel):
+    """Un evento en la cartelera. Lo minimo para la tarjeta y su link."""
+
+    slug: str
+    nombre: str
+    categoria: str | None
+    imagen_url: str | None
+    destacado: bool
+    recinto: RecintoPublicoResponse
+    proxima_funcion: datetime
+    # Cuantas funciones proximas tiene; no son butacas.
+    funciones: int
+    estado_venta: Literal["en_venta", "proximamente", "agotada", "venta_cerrada"]
+    disponibilidad: Literal["disponible", "ultimos_lugares", "agotado"] | None
+    precio_desde: Decimal | None
+
+    model_config = {"from_attributes": True}
+
+
+class CiudadDeCarteleraResponse(BaseModel):
+    nombre: str
+    pais: str
+    # Cuantos eventos tiene; no son butacas.
+    eventos: int
+
+    model_config = {"from_attributes": True}
+
+
+class FiltrosDeCarteleraResponse(BaseModel):
+    """Las opciones de los filtros, de toda la cartelera."""
+
+    paises: list[str]
+    # De la mas buscada a la menos.
+    ciudades: list[CiudadDeCarteleraResponse]
+    categorias: list[str]
+    # AAAA-MM, en la hora de cada recinto.
+    meses: list[str]
+
+    model_config = {"from_attributes": True}
+
+
+class CarteleraResponse(BaseModel):
+    eventos: list[TarjetaDeEventoResponse]
+    # Cuantos eventos coinciden con la busqueda (puede ser mas que la lista).
+    total: int
+    filtros: FiltrosDeCarteleraResponse
+
+    model_config = {"from_attributes": True}
+
+
 class ZonaDelMapaResponse(BaseModel):
     id: int
     nombre: str

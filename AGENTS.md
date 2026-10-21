@@ -142,6 +142,11 @@ está apartada, bloqueada o es cortesía. "Libre" es exactamente lo que el
 apartado deja pasar. Las butacas en kill no se envían. Se guarda 2 s en
 Redis; lo del propio comprador (`tuya`) se calcula fresco.
 
+La cartelera (`/publico/cartelera`) solo lista eventos visibles con alguna
+función próxima, con la misma disponibilidad en niveles y el precio con IVA.
+Las visitas a la página del evento solo ordenan "lo más buscado" y nunca
+se muestran; contarlas jamás puede tumbar la página que vende.
+
 ## Flujo de compra
 
 ```

@@ -3,7 +3,8 @@
 import contextlib
 import json
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query
 from pydantic import UUID4
@@ -14,10 +15,12 @@ from app.api.deps import DB
 from app.core.config import settings
 from app.core.redis import redis_client
 from app.schemas.publico import (
+    CarteleraResponse,
     ConfiguracionPublicaResponse,
     EventoPublicoResponse,
     MapaPublicoResponse,
 )
+from app.services.cartelera import Busqueda, CarteleraService, clave_de_visitas
 from app.services.limites import limite
 from app.services.publico import PublicoService
 
@@ -59,15 +62,84 @@ async def configuracion_publica() -> dict:
     dependencies=[limite("publico")],
 )
 async def evento_publico(
-    slug: Annotated[str, Path(max_length=160)], db: DB
+    slug: Annotated[str, Path(max_length=160)],
+    db: DB,
+    redis: Annotated[Redis, Depends(get_redis_publico)],
 ) -> EventoPublicoResponse:
     """La pagina del evento por su link de compra (psd.com/<slug>).
 
     Un evento en borrador, de un organizador dado de baja o inexistente
     responden igual: 404.
+
+    Cada visita suma para "lo mas buscado" de la cartelera. Si Redis no
+    responde, la pagina se muestra igual.
     """
     evento = await PublicoService(db).evento_por_slug(slug)
+    await _contar_visita(redis, evento.uuid)
     return EventoPublicoResponse.model_validate(evento)
+
+
+async def _contar_visita(redis: Redis, evento_uuid: UUID) -> None:
+    """El conteo solo ordena "lo mas buscado": ninguna falla al contar
+    (Redis caido, lento o mal configurado) puede tumbar la pagina que vende.
+    """
+    try:
+        await redis.incr(clave_de_visitas(evento_uuid))
+    except Exception:
+        log.warning("No se conto la visita del evento %s.", evento_uuid)
+
+
+@router.get(
+    "/cartelera",
+    response_model=CarteleraResponse,
+    dependencies=[limite("publico")],
+)
+async def cartelera(
+    db: DB,
+    redis: Annotated[Redis, Depends(get_redis_publico)],
+    q: Annotated[
+        str | None, Query(max_length=80, description="Evento, recinto o ciudad")
+    ] = None,
+    pais: Annotated[str | None, Query(min_length=2, max_length=2)] = None,
+    ciudad: Annotated[str | None, Query(max_length=80)] = None,
+    mes: Annotated[str | None, Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")] = None,
+    categoria: Annotated[str | None, Query(max_length=60)] = None,
+    destacados: bool = False,
+    orden: Literal["fecha", "populares"] = "fecha",
+    limite_: Annotated[int, Query(alias="limite", ge=1, le=100)] = 50,
+) -> CarteleraResponse:
+    """Los eventos que se pueden comprar, con busqueda y filtros.
+
+    Solo eventos publicados de organizadores activos, con alguna funcion
+    proxima. El texto ignora acentos y mayusculas. `orden=populares` es
+    "lo mas buscado", por visitas a la pagina del evento.
+    """
+    servicio = CarteleraService(db)
+    visitas: dict[UUID, int] = {}
+    if orden == "populares":
+        uuids = await servicio.visibles()
+        try:
+            valores = (
+                await redis.mget([clave_de_visitas(u) for u in uuids]) if uuids else []
+            )
+            visitas = {u: int(v) for u, v in zip(uuids, valores, strict=True) if v}
+        except Exception:
+            # Igual que el conteo: sin visitas se ordena por fecha.
+            log.warning("Cartelera sin Redis: se ordena por fecha.")
+    resultado = await servicio.cartelera(
+        Busqueda(
+            texto=q,
+            pais=pais,
+            ciudad=ciudad,
+            mes=mes,
+            categoria=categoria,
+            solo_destacados=destacados,
+            orden=orden,
+            limite=limite_,
+        ),
+        visitas,
+    )
+    return CarteleraResponse.model_validate(resultado)
 
 
 @router.get(
