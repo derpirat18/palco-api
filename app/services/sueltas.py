@@ -18,7 +18,12 @@ pasillo.
 Excepcion: si la butaca suelta es inevitable no se castiga. Con tres
 libres juntas y una compra de dos, cualquier eleccion deja una sola.
 
-Es una regla de negocio, no una garantia de integridad: dos compras
+Ademas, una compra de dos o mas lugares va junta: misma zona, misma fila,
+sin pasillo de por medio y sin huecos entre los lugares elegidos (PSD,
+20 de octubre de 2026; historia VIS-14). Un grupo repartido en dos filas
+se compra en dos compras.
+
+Son reglas de negocio, no una garantia de integridad: dos compras
 simultaneas en butacas vecinas pueden, entre las dos, dejar una suelta.
 Lo que no se puede es vender dos veces la misma butaca, y eso lo cuidan
 otras capas.
@@ -48,6 +53,9 @@ class Lugar:
     # Se puede vender a esta persona: disponible, apartado vencido o ya
     # apartado por ella misma.
     libre: bool
+    # False si nunca se vende (kill: una columna enfrente, mal sonido).
+    # Para juntar lugares no cuenta como hueco: nadie la puede ocupar.
+    vendible: bool = True
 
 
 def tramos(lugares: Iterable[Lugar]) -> list[list[Lugar]]:
@@ -104,6 +112,30 @@ def butaca_suelta(lugares: Iterable[Lugar], seleccion: set[int]) -> int | None:
                 if len(hueco) == 1:
                     return hueco[0].seat_id
     return None
+
+
+def lugares_separados(lugares: Iterable[Lugar], seleccion: set[int]) -> bool:
+    """True si la seleccion no esta junta en un solo tramo, sin huecos.
+
+    Un hueco es cualquier lugar del tramo entre dos elegidos que no este en
+    la seleccion: libre, ocupado o bloqueado. Un lugar que nunca se vende
+    (kill) no cuenta: nadie se va a sentar ahi. Con un solo lugar no hay
+    nada que juntar.
+    """
+    if len(seleccion) < 2:
+        return False
+    for tramo in tramos(lugares):
+        vendibles = [lugar for lugar in tramo if lugar.vendible]
+        posiciones = [
+            i for i, lugar in enumerate(vendibles) if lugar.seat_id in seleccion
+        ]
+        if not posiciones:
+            continue
+        # Todo tiene que caer en este tramo y en posiciones seguidas.
+        return len(posiciones) != len(seleccion) or (
+            posiciones[-1] - posiciones[0] + 1 != len(posiciones)
+        )
+    return True
 
 
 def _corridas_libres(tramo: list[Lugar]) -> list[list[Lugar]]:

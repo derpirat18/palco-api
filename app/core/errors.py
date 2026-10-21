@@ -62,3 +62,10 @@ class DejaButacaSuelta(ErrorDeDominio):
 
     codigo = "deja_butaca_suelta"
     http_status = 409
+
+
+class LugaresSeparados(ErrorDeDominio):
+    """Dos o mas lugares que no estan juntos en la misma fila."""
+
+    codigo = "lugares_separados"
+    http_status = 409

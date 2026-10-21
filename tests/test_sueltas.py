@@ -1,12 +1,13 @@
 """Pruebas de la regla de butacas sueltas, sin base de datos.
 
-Cada fila se describe con una cadena: `L` libre, `X` ocupada. Las
+Cada fila se describe con una cadena: `L` libre, `X` ocupada, `K` que
+nunca se vende (kill). Las
 posiciones van de 28 en 28 unidades, como el generador de mapas.
 """
 
 from decimal import Decimal
 
-from app.services.sueltas import Lugar, butaca_suelta, tramos
+from app.services.sueltas import Lugar, butaca_suelta, lugares_separados, tramos
 
 PASO = Decimal(28)
 
@@ -22,7 +23,9 @@ def fila(
     ids = ids or list(range(1, len(patron) + 1))
     xs = xs or [PASO * i for i in range(len(patron))]
     return [
-        Lugar(seat_id=i, zona_id=zona, fila=nombre, x=x, libre=c == "L")
+        Lugar(
+            seat_id=i, zona_id=zona, fila=nombre, x=x, libre=c == "L", vendible=c != "K"
+        )
         for i, x, c in zip(ids, xs, patron, strict=True)
     ]
 
@@ -208,3 +211,63 @@ def test_teatro_mexicano_del_generador():
     # Balcon A: la A-1 esta en kill, asi que la A-2 es orilla.
     b = {n: ids[("Balcon", "A", str(n))] for n in (2, 3, 4)}
     assert butaca_suelta(lugares, {b[3], b[4]}) == b[2]
+
+
+# --------------------------------------------------------------------------
+# Lugares juntos: misma fila y seguidos (VIS-14)
+# --------------------------------------------------------------------------
+
+
+def test_un_solo_lugar_siempre_esta_junto():
+    assert lugares_separados(fila("LLLLLL"), {4}) is False
+
+
+def test_seguidos_en_la_misma_fila_si():
+    assert lugares_separados(fila("LLLLLL"), {2, 3, 4}) is False
+
+
+def test_con_un_libre_en_medio_no():
+    assert lugares_separados(fila("LLLLLL"), {1, 3}) is True
+
+
+def test_con_dos_libres_en_medio_no():
+    """No deja ninguna sola, pero la familia no queda junta."""
+    lugares = fila("LLLLLL")
+    assert butaca_suelta(lugares, {1, 4}) is None
+    assert lugares_separados(lugares, {1, 4}) is True
+
+
+def test_con_uno_ocupado_en_medio_no():
+    assert lugares_separados(fila("LLXLLL"), {2, 4}) is True
+
+
+def test_en_dos_filas_no():
+    """Un grupo de 2 + 2 en filas distintas va en dos compras."""
+    lugares = fila("LLLL", nombre="A", ids=[1, 2, 3, 4]) + fila(
+        "LLLL", nombre="B", ids=[5, 6, 7, 8]
+    )
+    assert lugares_separados(lugares, {1, 2, 5, 6}) is True
+    assert lugares_separados(lugares, {5, 6}) is False
+
+
+def test_en_dos_zonas_no():
+    lugares = fila("LL", zona=1, ids=[1, 2]) + fila("LL", zona=2, ids=[3, 4])
+    assert lugares_separados(lugares, {2, 3}) is True
+
+
+def test_de_un_lado_y_otro_del_pasillo_no():
+    """Aunque los numeros sigan, el pasillo los separa."""
+    xs = [PASO * 0, PASO * 1, PASO * 5, PASO * 6]
+    assert lugares_separados(fila("LLLL", xs=xs), {2, 3}) is True
+
+
+def test_un_lugar_que_nunca_se_vende_no_los_separa():
+    """La K (una columna enfrente) no la puede ocupar nadie."""
+    assert lugares_separados(fila("LKLLLL"), {1, 3}) is False
+
+
+def test_juntos_por_posicion_no_por_numero():
+    """Luneta en nones: la 1, la 3 y la 5 estan juntas."""
+    lugares = fila("LLLL", ids=[1, 3, 5, 7])
+    assert lugares_separados(lugares, {3, 5}) is False
+    assert lugares_separados(lugares, {1, 5}) is True

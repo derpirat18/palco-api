@@ -5,8 +5,8 @@ garantia (ADR 0010):
 
   iniciar
     1. La funcion se sigue vendiendo y el apartado sigue vivo en Redis.
-    2. La seleccion no deja butacas sueltas (pudo cambiar desde que se
-       aparto: alguien libero una butaca al lado).
+    2. La seleccion sigue junta y no deja butacas sueltas (pudo cambiar
+       desde que se aparto: alguien libero una butaca al lado).
     3. Se extiende el apartado para cubrir el pago, con tope total.
     4. Comprador, orden con importes congelados, partidas, consentimientos.
     5. Stripe autoriza despues, con captura manual.
@@ -31,6 +31,7 @@ emitir y capturar tiene que haber un commit.
 from __future__ import annotations
 
 import contextlib
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -48,6 +49,7 @@ from app.core.errors import (
     AsientoNoDisponible,
     DejaButacaSuelta,
     ErrorDeDominio,
+    LugaresSeparados,
     RecursoNoEncontrado,
 )
 from app.core.telefonos import normalizar_telefono
@@ -55,6 +57,7 @@ from app.models.base import EstadoAsiento, EstadoBoleto, EstadoOrden
 from app.models.catalog import Client, Event, Performance, Seat, Zone
 from app.models.inventory import InventoryMove, PerformanceSeat
 from app.models.outbox import OutboxEvent
+from app.models.payments import PaymentEvent
 from app.models.sales import Customer, Order, OrderItem, Ticket
 from app.services.apartados import MARGEN_ESPEJO_SEGUNDOS, ApartadoService
 from app.services.consentimientos import ConsentimientoInvalido, ConsentimientoService
@@ -68,6 +71,8 @@ from app.services.pasarela import (
     Pasarela,
 )
 from app.services.venta import CENTAVO, iva_de
+
+log = logging.getLogger("palco.checkout")
 
 MONEDA = "MXN"
 # Con centavos: la respuesta siempre dice "0.00", igual que lo leido de la base.
@@ -228,14 +233,20 @@ class CheckoutService:
         seat_ids = [b.seat_id for b in apartado.butacas]
         ps_ids = sorted(b.performance_seat_id for b in apartado.butacas)
 
-        suelta = await self.apartados.butaca_que_quedaria_suelta(
+        revision = await self.apartados.revisar_seleccion(
             performance_id, seat_ids, hold_id, ahora
         )
-        if suelta is not None:
+        if revision.suelta is not None:
             raise DejaButacaSuelta(
                 "Tu selección deja un lugar vacío entre dos ocupados. Ajusta tus "
                 "lugares antes de pagar.",
-                {"seat_id": suelta, "performance_id": performance_id},
+                {"seat_id": revision.suelta, "performance_id": performance_id},
+            )
+        if revision.separados:
+            raise LugaresSeparados(
+                "Tus lugares ya no están juntos en la misma fila. Ajusta tus "
+                "lugares antes de pagar.",
+                {"performance_id": performance_id},
             )
 
         previa = await self.db.scalar(
@@ -424,7 +435,10 @@ class CheckoutService:
             return orden
 
         if intento.estado not in (AUTORIZADO, COBRADO):
-            # Todavia no paga, o la tarjeta fue rechazada y puede reintentar.
+            # Todavia no paga, o la tarjeta fue rechazada y puede reintentar,
+            # hasta el tope de rechazos.
+            if await self._rechazos(intento.id) >= settings.MAX_RECHAZOS_POR_ORDEN:
+                return await self._cerrar_por_rechazos(orden, intento)
             await self.db.commit()
             return orden
 
@@ -454,6 +468,50 @@ class CheckoutService:
         with contextlib.suppress(Exception):
             await self.holds.liberar(
                 orden.performance_id, seat_ids, orden.hold_id or ""
+            )
+        return orden
+
+    async def _rechazos(self, intento_id: str) -> int:
+        """Cuantas veces Stripe rechazo una tarjeta en este intento de pago.
+
+        Cuenta los avisos `payment_intent.payment_failed` ya guardados: cada
+        intento fallido es un aviso con su propio id, y los repetidos no se
+        guardan dos veces. Incluye rechazos del banco y 3D Secure fallido.
+        """
+        return await self.db.scalar(
+            select(func.count())
+            .select_from(PaymentEvent)
+            .where(
+                PaymentEvent.tipo == "payment_intent.payment_failed",
+                PaymentEvent.payload["data"]["object"]["id"].astext == intento_id,
+            )
+        )
+
+    async def _cerrar_por_rechazos(self, orden: Order, intento: IntentoDePago) -> Order:
+        """Tope de tarjetas rechazadas: se cancela y los lugares se liberan.
+
+        Primero se cancela en Stripe, para que ya no se pueda intentar otra
+        tarjeta sobre esta orden. Si Stripe no deja (un pago en proceso), se
+        queda como esta y lo resuelve el siguiente aviso o el barrido.
+        """
+        final = await self.pasarela.cancelar(
+            intento.id, idempotency_key=f"cancelar-{orden.uuid}"
+        )
+        if final.estado != CANCELADO:
+            await self.db.commit()
+            return orden
+
+        await self._cerrar(orden, CANCELADA, "pago_rechazado")
+        await self.db.commit()
+        # Los lugares vuelven a la venta ya. Si Redis o la base fallan aqui,
+        # el apartado vence solo con su tiempo y el barrido lo limpia.
+        try:
+            await self.apartados.liberar(orden.performance_id, orden.hold_id or "")
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            log.warning(
+                "No se liberaron al momento los lugares de la orden %s", orden.uuid
             )
         return orden
 

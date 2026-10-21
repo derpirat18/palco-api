@@ -193,6 +193,7 @@ async def test_un_pase_no_abre_apartados_sin_fin(api, sala_activa):
     assert r.status_code == 403
     assert r.json()["error"]["codigo"] == "turno_usado"
 
-    # Repetir con un apartado que el pase ya abrio no cuenta como otro.
-    _, r = await apartar(api, pid, seats[APARTADOS_POR_PASE], hold=holds[0], pase=pase)
+    # Repetir con un apartado que el pase ya abrio no cuenta como otro (la
+    # de junto: una compra va en lugares seguidos).
+    _, r = await apartar(api, pid, seats[APARTADOS_POR_PASE], hold=holds[-1], pase=pase)
     assert r.status_code == 201, r.text

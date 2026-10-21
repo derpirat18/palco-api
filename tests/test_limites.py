@@ -191,8 +191,9 @@ async def test_tope_de_apartados_vigentes_por_ip(api, db, clientes):
     assert r.json()["error"]["codigo"] == "demasiados_apartados"
     assert "compras en proceso" in r.json()["error"]["mensaje"]
 
-    # El mismo comprador puede seguir sumando butacas a su apartado.
-    _, r = await apartar(api, pid, seats[tope], hold=holds[0])
+    # El mismo comprador puede seguir sumando butacas a su apartado (la de
+    # junto: una compra va en lugares seguidos).
+    _, r = await apartar(api, pid, seats[tope], hold=holds[-1])
     assert r.status_code == 201, r.text
 
     # Soltar uno completo deja lugar para otro.

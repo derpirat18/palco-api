@@ -91,7 +91,8 @@ Las llaves de Redis llevan hash tag: `hold:{func:<id>}:<seat_id>`. Sin
 él, los scripts Lua multi-llave fallan en Redis Cluster.
 
 Una selección no puede dejar una butaca libre sola en su fila
-(`app/services/sueltas.py`, ADR 0008). La vecindad sale de la posición
+(`app/services/sueltas.py`, ADR 0008), y con 2 o más lugares van juntos
+en la misma fila, sin huecos (ADR 0020). La vecindad sale de la posición
 `x` en el mapa, nunca del número de butaca: la luneta va en nones y pares.
 
 ## Autorización
@@ -157,6 +158,9 @@ Detalle en ADR 0010. Lo que no se rompe:
   `finalizar`, idempotente. El webhook no se cree: se consulta a Stripe.
 - Entre emitir boletos y capturar hay un `commit`. Así, si la captura
   falla, los boletos existen y se sabe qué deshacer.
+- Máximo 2 tarjetas rechazadas por orden (ADR 0020): al segundo rechazo
+  se cancela en Stripe primero, la orden queda cancelada y los lugares
+  vuelven a la venta.
 - Error **transitorio** de Stripe: la orden queda pagada sin capturar y
   se reintenta. Nunca se cancelan boletos por un error de red. Solo un
   rechazo **definitivo** deshace la venta.

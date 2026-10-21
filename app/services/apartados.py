@@ -42,6 +42,7 @@ from app.core.errors import (
     DejaButacaSuelta,
     FuncionNoALaVenta,
     LimiteDeAsientos,
+    LugaresSeparados,
     RecursoNoEncontrado,
 )
 from app.models.base import EstadoAsiento
@@ -49,15 +50,28 @@ from app.models.catalog import Client, Event, Performance, Seat
 from app.models.inventory import InventoryMove, PerformanceSeat
 from app.services.holds import HoldService
 from app.services.inventory import ConflictoDeInventario
-from app.services.sueltas import Lugar, butaca_suelta
+from app.services.sueltas import Lugar, butaca_suelta, lugares_separados
 from app.services.venta import motivo_no_se_vende, visible_al_publico
 
 # Cuanto antes que Redis vence el apartado en Postgres. Cubre la latencia
 # entre el SET en Redis y el UPDATE en Postgres, y el reloj de cada uno.
 MARGEN_ESPEJO_SEGUNDOS = 5
 
+
+@dataclass(frozen=True)
+class RevisionDeSeleccion:
+    """Lo que las reglas de seleccion dicen de una compra."""
+
+    # La butaca que quedaria sola, si alguna. Se avisa primero porque el
+    # front la puede señalar en el mapa.
+    suelta: int | None
+    # Dos o mas lugares que no estan juntos en la misma fila.
+    separados: bool
+
+
 APARTADO = EstadoAsiento.APARTADO.value
 DISPONIBLE = EstadoAsiento.DISPONIBLE.value
+KILL = EstadoAsiento.KILL.value
 
 
 def _libre_para(
@@ -146,14 +160,19 @@ class ApartadoService:
 
         await self._verificar_tope(performance_id, seat_ids, hold_id, ahora)
 
-        suelta = await self.butaca_que_quedaria_suelta(
+        revision = await self.revisar_seleccion(
             performance_id, seat_ids, hold_id, ahora
         )
-        if suelta is not None:
+        if revision.suelta is not None:
             raise DejaButacaSuelta(
                 "Tu selección dejaría un lugar vacío entre dos ocupados. Elige "
                 "lugares juntos o deja libre el de al lado.",
-                {"seat_id": suelta, "performance_id": performance_id},
+                {"seat_id": revision.suelta, "performance_id": performance_id},
+            )
+        if revision.separados:
+            raise LugaresSeparados(
+                "No dejes lugares vacíos. Elige lugares consecutivos en la misma fila.",
+                {"performance_id": performance_id},
             )
 
         # Las que ya eran suyas antes de esta peticion. Si algo falla
@@ -333,14 +352,14 @@ class ApartadoService:
             fila.estado, fila.hold_id, fila.hold_expira_en, hold_id, ahora
         )
 
-    async def butaca_que_quedaria_suelta(
+    async def revisar_seleccion(
         self,
         performance_id: int,
         seat_ids: list[int],
         hold_id: str,
         ahora: datetime,
-    ) -> int | None:
-        """Aplica la regla de butacas sueltas a las filas que toca la compra.
+    ) -> RevisionDeSeleccion:
+        """Aplica las reglas de lugares juntos y de butacas sueltas.
 
         Lo que esta persona ya tenia apartado cuenta como parte de su
         seleccion: agregar una butaca a su carrito se evalua completo.
@@ -376,6 +395,7 @@ class ApartadoService:
                 fila=fila,
                 x=x,
                 libre=_libre_para(estado, dueno, expira, hold_id, ahora),
+                vendible=estado != KILL,
             )
             for seat_id, estado, dueno, expira, zona_id, fila, x in filas
         ]
@@ -384,7 +404,11 @@ class ApartadoService:
             for seat_id, estado, dueno, *_ in filas
             if estado == APARTADO and dueno == hold_id
         }
-        return butaca_suelta(lugares, set(seat_ids) | ya_suyas)
+        seleccion = set(seat_ids) | ya_suyas
+        return RevisionDeSeleccion(
+            suelta=butaca_suelta(lugares, seleccion),
+            separados=lugares_separados(lugares, seleccion),
+        )
 
     async def _verificar_tope(
         self,

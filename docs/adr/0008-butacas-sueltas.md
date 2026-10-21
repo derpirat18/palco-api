@@ -1,6 +1,6 @@
 # 0008 — No dejar butacas sueltas, con vecindad por posición
 
-Fecha: 2026-10-14 · Estado: aceptado
+Fecha: 2026-10-14 · Estado: aceptado, ampliado por el ADR 0020 (lugares juntos en la misma fila)
 
 ## Contexto
 

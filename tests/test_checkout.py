@@ -30,6 +30,7 @@ from app.core.errors import (
     ApartadoExpirado,
     DejaButacaSuelta,
     FuncionNoALaVenta,
+    LugaresSeparados,
 )
 from app.core.telefonos import TelefonoInvalido
 from app.models.base import EstadoAsiento, EstadoEvento
@@ -418,6 +419,24 @@ async def test_revalida_butacas_sueltas_al_pagar(
             esc["performance_id"], hold, comprador()
         )
     assert exc.value.detalle["seat_id"] == l2
+    assert stripe_falso.intentos == {}
+
+
+async def test_revalida_lugares_juntos_al_pagar(
+    db, clientes, hold_service, stripe_falso
+):
+    """Aparto de la 1 a la 4 y suelto la 2 y la 3: ya no van juntas."""
+    esc = await escenario(db, clientes[0].id, por_zona=8)
+    l1, l2, l3, l4 = esc["luneta"][:4]
+    hold = await apartar(db, hold_service, esc, [l1, l2, l3, l4])
+    await ApartadoService(db, hold_service).liberar(
+        esc["performance_id"], hold, [l2, l3]
+    )
+
+    with pytest.raises(LugaresSeparados):
+        await CheckoutService(db, hold_service, stripe_falso).iniciar(
+            esc["performance_id"], hold, comprador()
+        )
     assert stripe_falso.intentos == {}
 
 
@@ -1172,3 +1191,98 @@ async def test_webhook_que_falla_se_anota_y_stripe_reintenta(
     async with AsyncSession(motor_con_commit) as s:
         orden = await s.get(Order, iniciada.orden.id)
     assert orden.estado == "pagada"
+
+
+# --------------------------------------------------------------------------
+# Tarjetas rechazadas: hasta 2 intentos por orden (PSD, 20 oct 2026)
+# --------------------------------------------------------------------------
+
+
+async def avisar(api, evento: dict):
+    payload = json.dumps(evento).encode()
+    return await api.post(
+        f"{API}/pagos/stripe/webhook",
+        content=payload,
+        headers={"stripe-signature": firmar(payload)},
+    )
+
+
+async def test_con_una_tarjeta_rechazada_se_puede_pagar_con_otra(
+    api, db, clientes, hold_service, stripe_falso
+):
+    esc, _, _, iniciada = await orden_iniciada(
+        db, hold_service, stripe_falso, clientes[0].id
+    )
+    pi = iniciada.orden.stripe_payment_intent_id
+
+    r = await avisar(api, evento_de_stripe(pi, "payment_intent.payment_failed"))
+    assert r.status_code == 200
+    assert (await recargar(db, Order, iniciada.orden.id)).estado == "pendiente"
+    assert stripe_falso.cancelaciones == []
+    for s in esc["luneta"][:2]:
+        assert (await fila(db, esc["performance_id"], s)).estado == "apartado"
+
+    stripe_falso.autorizar(pi)
+    await avisar(api, evento_de_stripe(pi))
+    assert (await recargar(db, Order, iniciada.orden.id)).estado == "pagada"
+
+
+async def test_el_mismo_rechazo_repetido_cuenta_una_vez(
+    api, db, clientes, hold_service, stripe_falso
+):
+    """Stripe a veces entrega el mismo aviso dos veces: no son dos tarjetas."""
+    _, _, _, iniciada = await orden_iniciada(
+        db, hold_service, stripe_falso, clientes[0].id
+    )
+    pi = iniciada.orden.stripe_payment_intent_id
+    rechazo = evento_de_stripe(pi, "payment_intent.payment_failed")
+
+    await avisar(api, rechazo)
+    await avisar(api, rechazo)
+
+    assert (await recargar(db, Order, iniciada.orden.id)).estado == "pendiente"
+    assert stripe_falso.cancelaciones == []
+
+
+async def test_dos_tarjetas_rechazadas_cancelan_y_liberan_los_lugares(
+    api, db, clientes, hold_service, stripe_falso, redis_test
+):
+    esc, _, _, iniciada = await orden_iniciada(
+        db, hold_service, stripe_falso, clientes[0].id
+    )
+    pid, seats = esc["performance_id"], esc["luneta"][:2]
+    pi = iniciada.orden.stripe_payment_intent_id
+
+    await avisar(api, evento_de_stripe(pi, "payment_intent.payment_failed"))
+    r = await avisar(api, evento_de_stripe(pi, "payment_intent.payment_failed"))
+
+    assert r.status_code == 200
+    orden = await recargar(db, Order, iniciada.orden.id)
+    assert (orden.estado, orden.cerrada_motivo) == ("cancelada", "pago_rechazado")
+    # Cancelado en Stripe: ya no se puede intentar otra tarjeta sobre esta orden.
+    assert stripe_falso.cancelaciones == [pi]
+    assert stripe_falso.intentos[pi].estado == CANCELADO
+    # Los lugares vuelven a la venta al momento, en Postgres y en Redis.
+    for s in seats:
+        assert (await fila(db, pid, s)).estado == "disponible"
+        assert await redis_test.get(clave_butaca(pid, s)) is None
+    assert stripe_falso.capturas == []
+
+
+async def test_si_stripe_no_deja_cancelar_no_se_cierra_a_ciegas(
+    api, db, clientes, hold_service, stripe_falso
+):
+    """Un pago en proceso no se cancela: se resuelve en el siguiente aviso."""
+    esc, _, _, iniciada = await orden_iniciada(
+        db, hold_service, stripe_falso, clientes[0].id
+    )
+    pi = iniciada.orden.stripe_payment_intent_id
+    stripe_falso.cancelacion_bloqueada = True
+
+    await avisar(api, evento_de_stripe(pi, "payment_intent.payment_failed"))
+    await avisar(api, evento_de_stripe(pi, "payment_intent.payment_failed"))
+
+    assert (await recargar(db, Order, iniciada.orden.id)).estado == "pendiente"
+    assert (await fila(db, esc["performance_id"], esc["luneta"][0])).estado == (
+        "apartado"
+    )

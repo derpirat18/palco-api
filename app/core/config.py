@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     HOLD_TTL_CHECKOUT_SEGUNDOS: int = 900
     # Tope de butacas por orden. Defensa basica contra acaparamiento.
     MAX_ASIENTOS_POR_ORDEN: int = 8
+    # Tarjetas rechazadas por orden. Al llegar al tope se cancela la compra y
+    # los lugares vuelven a la venta (PSD, 20 de octubre de 2026).
+    MAX_RECHAZOS_POR_ORDEN: int = 2
 
     # --- Seguridad ---
     SECRET_KEY: str = Field(min_length=32)

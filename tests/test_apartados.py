@@ -24,6 +24,7 @@ from app.core.errors import (
     DejaButacaSuelta,
     FuncionNoALaVenta,
     LimiteDeAsientos,
+    LugaresSeparados,
     RecursoNoEncontrado,
 )
 from app.models.base import EstadoAsiento, EstadoEvento
@@ -211,7 +212,8 @@ async def test_butaca_de_otra_funcion(db, clientes, hold_service):
 
 async def test_tope_por_apartado_no_por_peticion(db, clientes, hold_service):
     """Ocho de un jalon, y despues una mas con el mismo hold: no."""
-    esc = await funcion_a_la_venta(db, clientes[0].id)
+    # Una fila de 10: las ocho tienen que ir juntas en la misma fila.
+    esc = await funcion_a_la_venta(db, clientes[0].id, butacas_por_zona=10)
     pid, seats = esc["performance_id"], esc["seat_ids"]
     tope = settings.MAX_ASIENTOS_POR_ORDEN
     assert len(seats) > tope
@@ -268,6 +270,49 @@ async def test_la_butaca_suelta_inevitable_se_permite(db, clientes, hold_service
     await poner_estado(db, pid, luneta[4], "vendido")
 
     await ApartadoService(db, hold_service).apartar(pid, luneta[1:3], nuevo_hold())
+
+
+async def test_lugares_separados_no_se_apartan(db, clientes, hold_service, redis_test):
+    """A1 y A4: no deja ninguna sola, pero no van juntos."""
+    esc = await funcion_a_la_venta(db, clientes[0].id, butacas_por_zona=8)
+    pid, luneta = esc["performance_id"], esc["seat_ids"][:4]
+
+    with pytest.raises(LugaresSeparados):
+        await ApartadoService(db, hold_service).apartar(
+            pid, [luneta[0], luneta[3]], nuevo_hold()
+        )
+    assert await redis_test.keys("hold:*") == [], "no debio llegar a Redis"
+
+
+async def test_agregar_un_lugar_lejos_de_los_suyos_no(db, clientes, hold_service):
+    """Ya tenia A1 y A2; sumar la A5 los separa. Sumar la A3 si."""
+    esc = await funcion_a_la_venta(db, clientes[0].id, butacas_por_zona=8)
+    pid, luneta = esc["performance_id"], esc["seat_ids"][:5]
+    hold = nuevo_hold()
+    servicio = ApartadoService(db, hold_service)
+    await servicio.apartar(pid, luneta[:2], hold)
+
+    with pytest.raises(LugaresSeparados):
+        await servicio.apartar(pid, [luneta[4]], hold)
+    assert (await fila(db, pid, luneta[4])).estado == "disponible"
+
+    await servicio.apartar(pid, [luneta[2]], hold)
+
+
+async def test_api_avisa_que_los_lugares_no_van_juntos(api, db, clientes):
+    esc = await funcion_a_la_venta(db, clientes[0].id, butacas_por_zona=8)
+    luneta = esc["seat_ids"][:4]
+
+    r = await api.post(
+        f"{API}/performances/{esc['performance_id']}/apartados",
+        json={"hold_id": str(uuid.uuid4()), "seat_ids": [luneta[0], luneta[3]]},
+    )
+
+    assert r.status_code == 409
+    assert r.json()["error"]["codigo"] == "lugares_separados"
+    assert r.json()["error"]["mensaje"] == (
+        "No dejes lugares vacíos. Elige lugares consecutivos en la misma fila."
+    )
 
 
 async def test_api_avisa_que_butaca_quedaria_sola(api, db, clientes):
