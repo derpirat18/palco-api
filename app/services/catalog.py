@@ -245,6 +245,21 @@ class CatalogService:
 
     # -------------------------------------------------------------- precios
 
+    async def precios_vigentes(self, performance_id: int) -> list[PerformancePrice]:
+        """Los precios base activos de la funcion, para mostrarlos al editar."""
+        return list(
+            (
+                await self.db.scalars(
+                    select(PerformancePrice)
+                    .where(
+                        PerformancePrice.performance_id == performance_id,
+                        PerformancePrice.activo.is_(True),
+                    )
+                    .order_by(PerformancePrice.zone_id)
+                )
+            ).all()
+        )
+
     async def fijar_precios(
         self, performance_id: int, precios_por_zona: dict[int, Decimal]
     ) -> list[PerformancePrice]:

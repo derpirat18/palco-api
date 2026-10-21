@@ -405,6 +405,26 @@ async def crear_funcion(
     return funcion
 
 
+@router.get(
+    "/performances/{performance_id}/precios",
+    response_model=list[PrecioResponse],
+    dependencies=[psd_u_organizador],
+    tags=["catalogo"],
+)
+async def consultar_precios(
+    performance_id: int, db: DB, usuario: UsuarioActual
+) -> list[PrecioResponse]:
+    """Precio base vigente de cada zona (sin IVA agregado: como se capturo)."""
+    servicio = CatalogService(db)
+    funcion = await servicio.obtener_funcion(performance_id)
+    evento = await servicio.obtener_evento(funcion.event_id)
+    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=FUNCION_NO_EXISTE)
+    return [
+        PrecioResponse.model_validate(p)
+        for p in await servicio.precios_vigentes(performance_id)
+    ]
+
+
 @router.put(
     "/performances/{performance_id}/precios",
     response_model=list[PrecioResponse],

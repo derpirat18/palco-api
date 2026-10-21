@@ -703,3 +703,45 @@ async def test_precios_de_funcion_inexistente(cliente_http, usuarios):
         json={"precios": {"1": "100"}},
     )
     assert r.status_code == 404
+
+
+async def test_consultar_precios_vigentes(cliente_http, funcion_lista):
+    """El panel muestra los precios capturados; una zona sin precio no sale."""
+    f = funcion_lista
+    url = f"{API}/performances/{f['funcion']['id']}/precios"
+    assert (await cliente_http.get(url, headers=auth(f["token"]))).json() == []
+
+    await cliente_http.put(
+        url,
+        headers=auth(f["token"]),
+        json={
+            "precios": {
+                str(f["zonas"]["Luneta"]): "850.50",
+                str(f["zonas"]["Balcon"]): "450",
+            }
+        },
+    )
+    # Al quitar Balcon, queda inactiva y ya no se muestra.
+    await cliente_http.put(
+        url,
+        headers=auth(f["token"]),
+        json={"precios": {str(f["zonas"]["Luneta"]): "900"}},
+    )
+
+    r = await cliente_http.get(url, headers=auth(f["token"]))
+    assert r.status_code == 200
+    assert [(p["zone_id"], p["precio"]) for p in r.json()] == [
+        (f["zonas"]["Luneta"], "900.00")
+    ]
+
+
+async def test_organizador_no_consulta_precios_ajenos(
+    cliente_http, usuarios, funcion_lista
+):
+    tk_b = auth(token_de(usuarios["org_b"]))
+    r = await cliente_http.get(
+        f"{API}/performances/{funcion_lista['funcion']['id']}/precios", headers=tk_b
+    )
+    igual_que_inexistente(
+        r, await cliente_http.get(f"{API}/performances/999999/precios", headers=tk_b)
+    )
