@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.core.textos import Linea, Parrafo, UrlHttps
 from app.services.seat_maps import (  # noqa: F401  (re-export)
     EspecificacionDeMapa,
     MapaGenerado,
@@ -18,12 +19,12 @@ TasaIva = Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)
 
 
 class VenueCrear(BaseModel):
-    nombre: str = Field(min_length=1, max_length=160)
-    ciudad: str = Field(min_length=1, max_length=80)
-    estado_geo: str | None = Field(default=None, max_length=80)
+    nombre: Linea = Field(min_length=1, max_length=160)
+    ciudad: Linea = Field(min_length=1, max_length=80)
+    estado_geo: Linea | None = Field(default=None, max_length=80)
     pais: str = Field(default="MX", min_length=2, max_length=2)
     zona_horaria: str = Field(default="America/Mexico_City", max_length=64)
-    direccion: str | None = None
+    direccion: Linea | None = Field(default=None, max_length=300)
     capacidad: int | None = Field(default=None, gt=0)
 
 
@@ -111,18 +112,19 @@ class MapaDibujoResponse(BaseModel):
 
 
 class ImportarMapaRequest(BaseModel):
-    nombre: str = Field(min_length=1, max_length=120)
-    csv: str = Field(min_length=1)
+    nombre: Linea = Field(min_length=1, max_length=120)
+    # ~20,000 butacas con sus columnas caben de sobra.
+    csv: str = Field(min_length=1, max_length=2_000_000)
     ajustar_viewport: bool = True
 
 
 class EventoCrear(BaseModel):
     client_id: int | None = None  # lo fija el servidor para organizadores
     venue_id: int
-    nombre: str = Field(min_length=1, max_length=200)
-    categoria: str | None = Field(default=None, max_length=60)
-    descripcion: str | None = None
-    imagen_url: str | None = Field(default=None, max_length=500)
+    nombre: Linea = Field(min_length=1, max_length=200)
+    categoria: Linea | None = Field(default=None, max_length=60)
+    descripcion: Parrafo | None = Field(default=None, max_length=5000)
+    imagen_url: UrlHttps | None = Field(default=None, max_length=500)
     destacado: bool = False
     # Lo decide el organizador con su contador (ADR 0013).
     iva_pct: TasaIva = Decimal("16.00")
@@ -130,10 +132,10 @@ class EventoCrear(BaseModel):
 
 
 class EventoActualizar(BaseModel):
-    nombre: str | None = Field(default=None, min_length=1, max_length=200)
-    categoria: str | None = Field(default=None, max_length=60)
-    descripcion: str | None = None
-    imagen_url: str | None = Field(default=None, max_length=500)
+    nombre: Linea | None = Field(default=None, min_length=1, max_length=200)
+    categoria: Linea | None = Field(default=None, max_length=60)
+    descripcion: Parrafo | None = Field(default=None, max_length=5000)
+    imagen_url: UrlHttps | None = Field(default=None, max_length=500)
     destacado: bool | None = None
     estado: str | None = None
     iva_pct: TasaIva | None = None

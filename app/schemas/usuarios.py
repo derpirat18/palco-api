@@ -5,17 +5,19 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.core.textos import Linea
+
 
 class CuentaCrear(BaseModel):
     email: EmailStr
-    nombre: str = Field(min_length=2, max_length=120)
+    nombre: Linea = Field(min_length=2, max_length=120)
     # admin_psd no: esas cuentas se crean con el script.
     rol: Literal["organizador", "acceso"]
     client_id: int
 
 
 class CuentaActualizar(BaseModel):
-    nombre: str | None = Field(default=None, min_length=2, max_length=120)
+    nombre: Linea | None = Field(default=None, min_length=2, max_length=120)
     activo: bool | None = None
 
 

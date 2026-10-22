@@ -5,14 +5,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.core.textos import Linea, NombreDePersona
+
 
 class CortesiaRequest(BaseModel):
     # Ids de butaca del mapa (los mismos del mapa publico).
     seat_ids: list[int] = Field(min_length=1, max_length=20)
     email: EmailStr
-    nombre: str = Field(min_length=1, max_length=120)
+    # Sale en la lista de la puerta como titular.
+    nombre: NombreDePersona = Field(min_length=1, max_length=120)
     # Prensa, patrocinador, familia del elenco...: queda en la bitacora.
-    motivo: str = Field(min_length=1, max_length=120)
+    motivo: Linea = Field(min_length=1, max_length=120)
 
 
 class LugarDeCortesiaResponse(BaseModel):

@@ -11,6 +11,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.textos import Linea
+
 # Numeric(5,2) en la base. Validar aqui los decimales evita que un 10.555
 # se redondee en silencio: sobre una comision, ese redondeo se multiplica
 # por cada boleto vendido.
@@ -80,14 +82,14 @@ class _NormalizaIdentificadores(BaseModel):
 
 
 class ClienteCrear(_NormalizaIdentificadores):
-    nombre: str = Field(min_length=2, max_length=160)
-    razon_social: str | None = Field(default=None, max_length=200)
-    rfc: str | None = None
-    direccion: str | None = None
-    contacto: str | None = Field(default=None, max_length=160)
+    nombre: Linea = Field(min_length=2, max_length=160)
+    razon_social: Linea | None = Field(default=None, max_length=200)
+    rfc: str | None = Field(default=None, max_length=20)
+    direccion: Linea | None = Field(default=None, max_length=300)
+    contacto: Linea | None = Field(default=None, max_length=160)
     telefono: str | None = Field(default=None, max_length=40)
     email: str | None = Field(default=None, max_length=255)
-    clabe: str | None = None
+    clabe: str | None = Field(default=None, max_length=30)
 
     # Si no se indica, aplica el valor por omision del modelo.
     comision_pct: Porcentaje | None = None
@@ -97,14 +99,14 @@ class ClienteCrear(_NormalizaIdentificadores):
 
 
 class ClienteActualizar(_NormalizaIdentificadores):
-    nombre: str | None = Field(default=None, min_length=2, max_length=160)
-    razon_social: str | None = Field(default=None, max_length=200)
-    rfc: str | None = None
-    direccion: str | None = None
-    contacto: str | None = Field(default=None, max_length=160)
+    nombre: Linea | None = Field(default=None, min_length=2, max_length=160)
+    razon_social: Linea | None = Field(default=None, max_length=200)
+    rfc: str | None = Field(default=None, max_length=20)
+    direccion: Linea | None = Field(default=None, max_length=300)
+    contacto: Linea | None = Field(default=None, max_length=160)
     telefono: str | None = Field(default=None, max_length=40)
     email: str | None = Field(default=None, max_length=255)
-    clabe: str | None = None
+    clabe: str | None = Field(default=None, max_length=30)
     comision_pct: Porcentaje | None = None
     ga_id: str | None = Field(default=None, max_length=40)
     pixel_id: str | None = Field(default=None, max_length=40)

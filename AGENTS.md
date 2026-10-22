@@ -234,6 +234,15 @@ Detalle en ADR 0010. Lo que no se rompe:
   usa el `uuid`, nunca el `id`. El `uuid` no cambia jamás, ni en una baja.
 - **Un correo, un `customer`.** Normalizado en minúsculas. Quien compra
   como invitado hoy y crea cuenta mañana conserva su historial.
+- **Texto libre limpio al entrar** (`app/core/textos.py`). Todo campo de
+  texto de un esquema de entrada usa `Linea`, `Parrafo` o `NombreDePersona`
+  (más `UrlHttps` y `Color`) y lleva `max_length` igual o menor que su
+  columna: quita caracteres invisibles y espacios de más antes de medir, y
+  un tope más largo que la columna termina en error 500. Un nombre de persona
+  empieza con letra, así nunca es una fórmula de Excel en la lista de la
+  puerta. SQL y HTML no se "limpian" aquí: los cubren los parámetros de
+  SQLAlchemy y el escape de React y del correo; nunca se arma SQL ni HTML
+  pegando texto del usuario.
 - **Teléfonos en E.164** (`+525512345678`). Todo teléfono que entra pasa
   por `app/core/telefonos.normalizar_telefono` antes de guardarse; la
   base lo exige con `ck_customers_telefono_e164`. Un número inválido se

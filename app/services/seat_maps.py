@@ -20,11 +20,12 @@ import math
 import string
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.errors import ErrorDeDominio
+from app.core.textos import Color, Linea
 
 # Butacas por encima de esto casi siempre significan un error de captura
 # (un cero de mas en butacas_por_fila). Mejor rechazar que generar medio
@@ -70,10 +71,11 @@ class BloqueDeButacas(BaseModel):
     izquierda y derecha, separados por pasillos.
     """
 
-    zona: str = Field(min_length=1, max_length=80)
-    color: str | None = None
+    zona: Linea = Field(min_length=1, max_length=80)
+    color: Color | None = Field(default=None, max_length=9)
 
-    filas: RangoFilas | list[str]
+    # Cada fila cabe en 8 caracteres (seats.fila).
+    filas: RangoFilas | list[Annotated[Linea, Field(min_length=1, max_length=8)]]
     butacas_por_fila: int = Field(gt=0, le=200)
     # Filas que llevan otra cantidad: {"A": 12, "B": 14}. Las filas de
     # adelante en un teatro suelen ser mas cortas.
@@ -95,9 +97,13 @@ class BloqueDeButacas(BaseModel):
     curvatura: Decimal = Decimal(0)
 
     # Butacas que no existen (un pasillo a media fila): ["F-7", "F-8"].
-    omitir: list[str] = Field(default_factory=list)
+    omitir: list[Annotated[Linea, Field(max_length=20)]] = Field(
+        default_factory=list, max_length=5000
+    )
     # Butacas que existen pero nunca se venden (columna enfrente, sonido).
-    kill: list[str] = Field(default_factory=list)
+    kill: list[Annotated[Linea, Field(max_length=20)]] = Field(
+        default_factory=list, max_length=5000
+    )
 
     @field_validator("filas")
     @classmethod
@@ -115,7 +121,7 @@ class BloqueDeButacas(BaseModel):
 class EspecificacionDeMapa(BaseModel):
     """Lo que se recibe para generar un mapa completo."""
 
-    nombre: str = Field(min_length=1, max_length=120)
+    nombre: Linea = Field(min_length=1, max_length=120)
     ancho: int = Field(default=1000, gt=0, le=10_000)
     alto: int = Field(default=700, gt=0, le=10_000)
     bloques: list[BloqueDeButacas] = Field(min_length=1)

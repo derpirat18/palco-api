@@ -12,23 +12,26 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.core.textos import Linea, NombreDePersona
+
 
 class CheckoutRequest(BaseModel):
     email: EmailStr
-    nombre: str = Field(min_length=1, max_length=120)
-    apellidos: str | None = Field(default=None, max_length=120)
-    telefono: str | None = Field(default=None, max_length=30)
+    nombre: NombreDePersona = Field(min_length=1, max_length=120)
+    apellidos: NombreDePersona | None = Field(default=None, max_length=120)
+    # Se normaliza y valida en el servicio (normalizar_telefono).
+    telefono: Linea | None = Field(default=None, max_length=30)
     # Dos casillas separadas, nunca una sola (ADR 0009).
     acepta_aviso: bool
     acepta_marketing: bool = False
     # Version del aviso que el front mostro, p. ej. "2026-10".
     aviso_version: str = Field(min_length=1, max_length=20)
 
-    utm_source: str | None = Field(default=None, max_length=120)
-    utm_medium: str | None = Field(default=None, max_length=120)
-    utm_campaign: str | None = Field(default=None, max_length=160)
-    utm_content: str | None = Field(default=None, max_length=160)
-    canal: str | None = Field(default=None, max_length=40)
+    utm_source: Linea | None = Field(default=None, max_length=120)
+    utm_medium: Linea | None = Field(default=None, max_length=120)
+    utm_campaign: Linea | None = Field(default=None, max_length=160)
+    utm_content: Linea | None = Field(default=None, max_length=160)
+    canal: Linea | None = Field(default=None, max_length=40)
 
 
 class PartidaResponse(BaseModel):
