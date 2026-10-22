@@ -67,11 +67,23 @@ class RevisionDeSeleccion:
     suelta: int | None
     # Dos o mas lugares que no estan juntos en la misma fila.
     separados: bool
+    # Los lugares caen en mas de una zona o fila: se explica distinto que un
+    # hueco dentro de la fila.
+    varias_filas: bool = False
 
 
 APARTADO = EstadoAsiento.APARTADO.value
 DISPONIBLE = EstadoAsiento.DISPONIBLE.value
 KILL = EstadoAsiento.KILL.value
+
+
+# Lugares separados: un hueco dentro de la fila, o lugares en otra zona o
+# fila (una compra va toda junta, ADR 0020).
+_CON_HUECOS = "No dejes lugares vacíos. Elige lugares consecutivos en la misma fila."
+_OTRA_FILA = (
+    "En una compra, todos los lugares van en la misma zona y fila. Para "
+    "lugares en otra zona o fila, termina esta compra y haz otra."
+)
 
 
 def _libre_para(
@@ -171,7 +183,7 @@ class ApartadoService:
             )
         if revision.separados:
             raise LugaresSeparados(
-                "No dejes lugares vacíos. Elige lugares consecutivos en la misma fila.",
+                _OTRA_FILA if revision.varias_filas else _CON_HUECOS,
                 {"performance_id": performance_id},
             )
 
@@ -362,11 +374,25 @@ class ApartadoService:
         """Aplica las reglas de lugares juntos y de butacas sueltas.
 
         Lo que esta persona ya tenia apartado cuenta como parte de su
-        seleccion: agregar una butaca a su carrito se evalua completo.
+        seleccion: agregar una butaca a su carrito se evalua completo. Se
+        busca en toda la funcion, no solo en la fila de la nueva: si no, una
+        butaca de otra zona pasaba como si fuera la unica.
         """
+        ya_suyas = set(
+            (
+                await self.db.scalars(
+                    select(PerformanceSeat.seat_id).where(
+                        PerformanceSeat.performance_id == performance_id,
+                        PerformanceSeat.estado == APARTADO,
+                        PerformanceSeat.hold_id == hold_id,
+                    )
+                )
+            ).all()
+        )
+        seleccion = set(seat_ids) | ya_suyas
         filas_tocadas = (
             await self.db.execute(
-                select(Seat.zone_id, Seat.fila).where(Seat.id.in_(seat_ids)).distinct()
+                select(Seat.zone_id, Seat.fila).where(Seat.id.in_(seleccion)).distinct()
             )
         ).all()
         filas = (
@@ -399,15 +425,10 @@ class ApartadoService:
             )
             for seat_id, estado, dueno, expira, zona_id, fila, x in filas
         ]
-        ya_suyas = {
-            seat_id
-            for seat_id, estado, dueno, *_ in filas
-            if estado == APARTADO and dueno == hold_id
-        }
-        seleccion = set(seat_ids) | ya_suyas
         return RevisionDeSeleccion(
             suelta=butaca_suelta(lugares, seleccion),
             separados=lugares_separados(lugares, seleccion),
+            varias_filas=len(filas_tocadas) > 1,
         )
 
     async def _verificar_tope(
