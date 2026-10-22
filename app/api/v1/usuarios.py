@@ -2,14 +2,17 @@
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import DB, requiere_rol
+from app.api.deps import DB, UsuarioActual, requiere_rol
 from app.models.base import RolUsuario
 from app.schemas.usuarios import (
+    AsignacionesRequest,
     CuentaActualizar,
     CuentaConPasswordResponse,
     CuentaCrear,
     CuentaResponse,
+    EventoAsignadoResponse,
 )
+from app.services.asignaciones import AsignacionesService
 from app.services.usuarios import UsuariosService
 
 router = APIRouter(
@@ -67,3 +70,29 @@ async def restablecer_password(usuario_id: int, db: DB) -> CuentaConPasswordResp
     return CuentaConPasswordResponse(
         cuenta=CuentaResponse.model_validate(usuario), password_temporal=password
     )
+
+
+def _asignados(filas) -> list[EventoAsignadoResponse]:
+    return [
+        EventoAsignadoResponse(
+            event_id=e.id, nombre=e.nombre, estado=e.estado, asignado_en=en
+        )
+        for e, en in filas
+    ]
+
+
+@router.get("/{usuario_id}/eventos", response_model=list[EventoAsignadoResponse])
+async def eventos_asignados(usuario_id: int, db: DB) -> list[EventoAsignadoResponse]:
+    """Los eventos donde esta cuenta de acceso puede escanear."""
+    return _asignados(await AsignacionesService(db).de_cuenta(usuario_id))
+
+
+@router.put("/{usuario_id}/eventos", response_model=list[EventoAsignadoResponse])
+async def asignar_eventos(
+    usuario_id: int, datos: AsignacionesRequest, db: DB, actor: UsuarioActual
+) -> list[EventoAsignadoResponse]:
+    """Deja a la cuenta exactamente en estos eventos. Quitarle uno le corta
+    el acceso a ese evento en la siguiente lectura."""
+    filas = await AsignacionesService(db).fijar(usuario_id, datos.event_ids, actor.id)
+    await db.commit()
+    return _asignados(filas)

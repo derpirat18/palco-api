@@ -54,7 +54,7 @@ class ListaDeAcceso:
         return sum(1 for b in self.boletos if b.estado == EstadoBoleto.USADO.value)
 
 
-def _titular(orden: Order, boleto: Ticket, c: Customer) -> str:
+def titular_de(orden: Order, boleto: Ticket, c: Customer) -> str:
     # El nombre escrito en esta compra, mientras el boleto siga siendo de
     # quien compro (una transferencia lo pasa a otra persona).
     if boleto.holder_customer_id == orden.customer_id and orden.nombre_snap:
@@ -107,7 +107,7 @@ class ListaDeAccesoService:
                     asiento=partida.asiento_snap,
                     codigo=boleto.codigo,
                     folio=orden.folio,
-                    titular=_titular(orden, boleto, titular),
+                    titular=titular_de(orden, boleto, titular),
                     cortesia=orden.canal == "cortesia",
                     estado=boleto.estado,
                 )

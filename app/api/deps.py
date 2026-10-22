@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_db
 from app.core.errors import RecursoNoEncontrado
 from app.core.security import PermisoInsuficiente, TokenInvalido, decodificar_token
+from app.models.acceso import AsignacionDeAcceso
 from app.models.base import RolUsuario
 from app.models.users import User
 
@@ -121,4 +122,32 @@ def verificar_acceso_cliente(
         return
 
     if usuario.client_id != client_id:
+        raise RecursoNoEncontrado(no_encontrado)
+
+
+async def verificar_acceso_evento(
+    db: AsyncSession,
+    usuario: User,
+    event_id: int,
+    client_id: int,
+    *,
+    no_encontrado: str,
+) -> None:
+    """Como `verificar_acceso_cliente`, y ademas la asignacion del personal de acceso.
+
+    Una cuenta de acceso es de un organizador, pero solo entra a los
+    eventos a los que PSD la asigno (E3a): quien escanea en Puebla no abre
+    la lista de Tuxtla. Para ella, un evento no asignado no existe: el
+    mismo 404 que uno inexistente.
+    """
+    verificar_acceso_cliente(usuario, client_id, no_encontrado=no_encontrado)
+    if usuario.rol != RolUsuario.ACCESO:
+        return
+    asignado = await db.scalar(
+        select(AsignacionDeAcceso.id).where(
+            AsignacionDeAcceso.user_id == usuario.id,
+            AsignacionDeAcceso.event_id == event_id,
+        )
+    )
+    if asignado is None:
         raise RecursoNoEncontrado(no_encontrado)

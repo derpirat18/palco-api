@@ -4,6 +4,7 @@ Alembic importa este modulo para descubrir el metadata completo. Todo
 modelo nuevo debe quedar listado aqui o sus migraciones no se generan.
 """
 
+from app.models.acceso import AsignacionDeAcceso, ConsultaDeDatos
 from app.models.base import Base
 from app.models.catalog import (
     Client,
@@ -39,9 +40,11 @@ from app.models.users import User
 
 __all__ = [
     "AccessDevice",
+    "AsignacionDeAcceso",
     "Base",
     "Client",
     "Consent",
+    "ConsultaDeDatos",
     "Cortesia",
     "Customer",
     "DiscountCode",

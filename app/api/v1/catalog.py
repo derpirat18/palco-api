@@ -11,9 +11,16 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 
-from app.api.deps import DB, UsuarioActual, requiere_rol, verificar_acceso_cliente
+from app.api.deps import (
+    DB,
+    UsuarioActual,
+    requiere_rol,
+    verificar_acceso_cliente,
+    verificar_acceso_evento,
+)
 from app.core.errors import EVENTO_NO_EXISTE, FUNCION_NO_EXISTE, RecursoNoEncontrado
 from app.core.security import PermisoInsuficiente
+from app.models.acceso import AsignacionDeAcceso
 from app.models.base import EstadoEvento, EstadoFuncion, RolUsuario
 from app.models.catalog import Event, Performance, SeatMap, Venue, Zone
 from app.schemas.catalog import (
@@ -277,10 +284,19 @@ async def listar_zonas(seat_map_id: int, db: DB, _: UsuarioActual) -> list[Zone]
 
 @router.get("/events", response_model=list[EventoResponse], tags=["catalogo"])
 async def listar_eventos(db: DB, usuario: UsuarioActual) -> list[Event]:
-    """Un organizador solo ve sus propios eventos."""
+    """Un organizador solo ve sus propios eventos; su personal de acceso,
+    solo aquellos a los que lo asignaron."""
     consulta = select(Event).order_by(Event.id.desc())
     if usuario.rol != RolUsuario.ADMIN_PSD:
         consulta = consulta.where(Event.client_id == usuario.client_id)
+    if usuario.rol == RolUsuario.ACCESO:
+        consulta = consulta.where(
+            Event.id.in_(
+                select(AsignacionDeAcceso.event_id).where(
+                    AsignacionDeAcceso.user_id == usuario.id
+                )
+            )
+        )
     return list((await db.scalars(consulta)).all())
 
 
@@ -333,7 +349,9 @@ async def obtener_evento(event_id: int, db: DB, usuario: UsuarioActual) -> Event
     evento = await CatalogService(db).obtener_evento(event_id)
     # Se valida con el client_id real del recurso, nunca con uno que
     # venga en la peticion.
-    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=EVENTO_NO_EXISTE)
+    await verificar_acceso_evento(
+        db, usuario, evento.id, evento.client_id, no_encontrado=EVENTO_NO_EXISTE
+    )
     return evento
 
 
@@ -394,7 +412,9 @@ async def listar_funciones(
     event_id: int, db: DB, usuario: UsuarioActual
 ) -> list[Performance]:
     evento = await CatalogService(db).obtener_evento(event_id)
-    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=EVENTO_NO_EXISTE)
+    await verificar_acceso_evento(
+        db, usuario, evento.id, evento.client_id, no_encontrado=EVENTO_NO_EXISTE
+    )
     return list(
         (
             await db.scalars(

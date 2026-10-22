@@ -2,7 +2,7 @@
 
 Lo que importa: salen solo los boletos que pueden entrar (pagados,
 validos o ya usados), en el orden en que se recorre la sala, y sin datos
-de contacto. La ven PSD, el organizador dueno y su personal de acceso;
+de contacto. La ven PSD, el organizador dueno y su personal de acceso asignado;
 para cualquier otro, la funcion no existe.
 """
 
@@ -92,6 +92,14 @@ async def test_solo_lo_que_puede_entrar(cliente_http, db, esc, usuarios):  # noq
 
 async def test_la_ven_psd_el_organizador_y_su_personal(cliente_http, esc, usuarios):  # noqa: F811
     pid = esc["performance_id"]
+    # El personal de acceso, solo en los eventos a los que lo asignaron (E3a);
+    # sin asignar, ver tests/test_escaner.py.
+    asignada = await cliente_http.put(
+        f"{API}/usuarios/{usuarios['acceso'].id}/eventos",
+        json={"event_ids": [esc["event_id"]]},
+        headers=de(usuarios, "admin"),
+    )
+    assert asignada.status_code == 200, asignada.text
     for quien in ("admin", "org_a", "acceso"):
         assert (await lista(cliente_http, usuarios, pid, quien)).status_code == 200, (
             quien

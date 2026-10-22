@@ -40,3 +40,16 @@ class CuentaConPasswordResponse(BaseModel):
 
     cuenta: CuentaResponse
     password_temporal: str
+
+
+class AsignacionesRequest(BaseModel):
+    """Los eventos donde va a escanear la cuenta. Reemplaza los anteriores."""
+
+    event_ids: list[int] = Field(max_length=200)
+
+
+class EventoAsignadoResponse(BaseModel):
+    event_id: int
+    nombre: str
+    estado: str
+    asignado_en: datetime

@@ -387,6 +387,11 @@ class Scan(Base, PKMixin):
     device_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("access_devices.id", ondelete="SET NULL")
     )
+    # Quien escaneo, cuando es desde el panel en linea (E3a): "ya entro a
+    # las 7:42 pm con Lupita".
+    user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
+    )
     codigo_leido: Mapped[str | None] = mapped_column(String(80))
     resultado: Mapped[str] = mapped_column(String(16), nullable=False)
     escaneado_en: Mapped[datetime] = mapped_column(
@@ -407,6 +412,7 @@ class Scan(Base, PKMixin):
             name="resultado_valido",
         ),
         Index("ix_scans_performance_escaneado", "performance_id", "escaneado_en"),
+        Index("ix_scans_ticket", "ticket_id"),
     )
 
 

@@ -7,7 +7,7 @@ un dato de la peticion.
 
 from fastapi import APIRouter, Depends, status
 
-from app.api.deps import DB, UsuarioActual, requiere_rol, verificar_acceso_cliente
+from app.api.deps import DB, UsuarioActual, requiere_rol, verificar_acceso_evento
 from app.core.errors import FUNCION_NO_EXISTE
 from app.models.base import RolUsuario
 from app.models.catalog import Performance
@@ -35,7 +35,9 @@ async def _funcion_autorizada(
     servicio = InventoryService(db)
     funcion = await servicio.obtener_funcion(performance_id)
     evento = await CatalogService(db).obtener_evento(funcion.event_id)
-    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=FUNCION_NO_EXISTE)
+    await verificar_acceso_evento(
+        db, usuario, evento.id, evento.client_id, no_encontrado=FUNCION_NO_EXISTE
+    )
     return funcion
 
 
