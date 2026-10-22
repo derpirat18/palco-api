@@ -5,6 +5,8 @@ temporal sale una sola vez y sirve para entrar; desactivar corta el
 acceso en la siguiente peticion.
 """
 
+import re
+
 import pytest
 
 from tests.test_catalog import API, auth, token_de
@@ -48,7 +50,9 @@ async def test_psd_crea_cuenta_y_la_contrasena_temporal_sirve(
     }
     assert cuerpo["cuenta"]["email"] == "taquilla@circo.mx"
     assert cuerpo["cuenta"]["rol"] == "acceso"
-    assert len(cuerpo["password_temporal"]) >= 14
+    # Sin mayusculas ni caracteres que se confunden: se copia o se dicta sin error.
+    assert re.fullmatch(r"[a-z2-9]{4}(-[a-z2-9]{4}){3}", cuerpo["password_temporal"])
+    assert not set(cuerpo["password_temporal"]) & set("01ilo")
 
     login = await entrar(cliente_http, "taquilla@circo.mx", cuerpo["password_temporal"])
     assert login.status_code == 200, login.text

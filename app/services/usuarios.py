@@ -27,8 +27,10 @@ from app.services.auth import normalizar_email
 ROLES_DEL_PANEL = {RolUsuario.ORGANIZADOR.value, RolUsuario.ACCESO.value}
 CUENTA_NO_EXISTE = "No encontramos esa cuenta."
 
-# Sin letras ni numeros que se confunden al dictarlos o copiarlos (0/O, 1/l/I).
-_ALFABETO = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+# Solo minusculas y numeros, sin los que se confunden (0/o, 1/l/i): con
+# mayusculas, letras como c/C, s/S o x/X se ven casi iguales y una persona
+# que la copia a mano o la dicta por telefono no entra.
+_ALFABETO = "abcdefghjkmnpqrstuvwxyz23456789"
 
 
 class ConflictoDeCuenta(ErrorDeDominio):
@@ -37,9 +39,9 @@ class ConflictoDeCuenta(ErrorDeDominio):
 
 
 def password_temporal() -> str:
-    """14 caracteres en grupos: facil de dictar, ~80 bits de azar."""
-    c = "".join(secrets.choice(_ALFABETO) for _ in range(14))
-    return f"{c[:5]}-{c[5:10]}-{c[10:]}"
+    """16 caracteres en cuatro grupos de 4: facil de dictar, ~79 bits de azar."""
+    c = "".join(secrets.choice(_ALFABETO) for _ in range(16))
+    return "-".join(c[i : i + 4] for i in range(0, 16, 4))
 
 
 class UsuariosService:
