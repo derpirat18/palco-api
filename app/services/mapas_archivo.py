@@ -1,6 +1,6 @@
 """Mapas de recintos desde el archivo que ya tiene el recinto (D2).
 
-CSV, Excel o PDF terminan igual: una lista de butacas con zona, fila,
+CSV, Excel, PDF o SVG terminan igual: una lista de butacas con zona, fila,
 numero, posicion y color, mas los avisos de lo que conviene revisar. No se
 guarda nada aqui: el panel muestra la vista previa, deja nombrar y unir
 zonas, y guarda con la importacion de siempre (`importar_mapa_csv`). Asi
@@ -12,6 +12,9 @@ cercana en el mismo renglon; su zona es el color de la casilla que lo
 contiene. Un PDF escaneado no trae texto y se rechaza con un mensaje que lo
 dice. Las zonas salen como "Zona 1", "Zona 2"... por color, de adelante
 hacia atras: el nombre y el precio los pone una persona.
+
+SVG: con la convencion de docs/mapas-svg.md (capas por zona, butacas
+nombradas FILA-NUMERO) o, sin ella, igual que el PDF.
 
 Todo es entrada no confiable aunque solo PSD la suba: hay topes de tamaño,
 de paginas y de butacas, y el Excel se revisa contra bombas de zip antes de
@@ -88,6 +91,8 @@ def leer_archivo(nombre_archivo: str, contenido: bytes) -> Lectura:
     tipo = _tipo(nombre_archivo, contenido)
     if tipo == "pdf":
         lectura = leer_pdf(contenido)
+    elif tipo == "svg":
+        lectura = leer_svg(contenido)
     elif tipo == "xlsx":
         lectura = leer_xlsx(contenido)
     else:
@@ -113,6 +118,13 @@ def _tipo(nombre: str, contenido: bytes) -> str:
         return "pdf"
     if contenido.startswith(b"PK\x03\x04"):
         return "xlsx"
+    inicio = contenido[:4096].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if inicio.startswith((b"<?xml", b"<svg", b"<!--", b"<!doctype")) and b"<svg" in (
+        contenido[:65536].lower()
+    ):
+        return "svg"
+    if nombre.lower().endswith(".svg"):
+        raise MapaInvalido("El archivo no es un SVG válido.")
     if nombre.lower().endswith((".pdf", ".xlsx", ".xls")):
         raise MapaInvalido(
             "El archivo no es un PDF ni un Excel válido. Si es Excel antiguo "
@@ -271,24 +283,36 @@ def leer_pdf(contenido: bytes) -> Lectura:
             color = _hex(tinta(valor) if tinta else valor)
             # Casillas, no el fondo de toda la hoja ni lineas sueltas.
             if color and 2 < obj.width < pagina.width / 3 and 2 < obj.height < 80:
-                casillas.append((obj.x0, obj.y0, obj.x1, obj.y1, color))
+                # Con y hacia abajo, como las fichas y como el SVG.
+                casillas.append(
+                    (obj.x0, alto_pagina - obj.y1, obj.x1, alto_pagina - obj.y0, color)
+                )
         for hijo in getattr(obj, "_objs", []) or []:
             recorrer(hijo)
 
     recorrer(pagina)
-    fichas = _fichas(letras, alto_pagina)
+    return _por_texto("pdf", _fichas(letras, alto_pagina), casillas)
+
+
+def _por_texto(origen: str, fichas: list[_Ficha], casillas) -> Lectura:
+    """Butacas de un plano dibujado: cada numero, su fila y el color de su casilla.
+
+    Lo comparten el PDF y el SVG sin convencion. `casillas` son
+    (x0, y0, x1, y1, color) con y hacia abajo, igual que las fichas.
+    """
+    nombre = "PDF" if origen == "pdf" else "SVG"
     numeros = [f for f in fichas if _NUMERO.fullmatch(f.texto)]
     etiquetas = [f for f in fichas if _FILA.fullmatch(f.texto)]
     if not numeros:
         raise MapaInvalido(
-            "No encontramos números de butaca en el PDF. Si es un escaneo o una "
-            "foto, no trae el texto que se necesita: pide el archivo original "
-            "(Publisher, Excel, AutoCAD) o carga el mapa por bloques."
+            f"No encontramos números de butaca en el {nombre}. Si es un escaneo "
+            "o una foto, no trae el texto que se necesita: pide el archivo "
+            "original (Publisher, Excel, AutoCAD) o carga el mapa por bloques."
         )
     if not etiquetas:
         raise MapaInvalido(
             "Encontramos números pero ninguna letra de fila (A, B, AA...). El "
-            "PDF necesita las letras de las filas junto a cada renglón."
+            f"{nombre} necesita las letras de las filas junto a cada renglón."
         )
 
     # Separacion tipica entre renglones: para saber cuando un numero no
@@ -299,15 +323,13 @@ def leer_pdf(contenido: bytes) -> Lectura:
 
     avisos: list[str] = []
     sin_fila = 0
-    colores_por_ficha: list[str | None] = []
     butacas: list[ButacaLeida] = []
     for n in numeros:
         cerca = min(etiquetas, key=lambda e: abs(e.cy - n.cy))
         if abs(cerca.cy - n.cy) > tolerancia:
             sin_fila += 1
             continue
-        color = _color_de(n, casillas, alto_pagina)
-        colores_por_ficha.append(color)
+        color = _color_de(n, casillas)
         butacas.append(
             ButacaLeida(
                 zona="", fila=cerca.texto, numero=n.texto, x=n.cx, y=n.cy, color=color
@@ -335,7 +357,7 @@ def leer_pdf(contenido: bytes) -> Lectura:
             "Algunas butacas no están sobre una casilla de color; quedaron en "
             'la zona "Sin color".'
         )
-    return Lectura(origen="pdf", butacas=butacas, avisos=avisos)
+    return Lectura(origen=origen, butacas=butacas, avisos=avisos)
 
 
 def _primera_pagina(contenido: bytes):
@@ -494,9 +516,9 @@ def _fichas(letras, alto_pagina: float) -> list[_Ficha]:
     return fichas
 
 
-def _color_de(f: _Ficha, casillas, alto_pagina: float) -> str | None:
+def _color_de(f: _Ficha, casillas) -> str | None:
     """El color de la casilla mas chica que contiene el centro del numero."""
-    x, y = f.cx, alto_pagina - f.cy
+    x, y = f.cx, f.cy
     dentro = [
         ((x1 - x0) * (y1 - y0), color)
         for x0, y0, x1, y1, color in casillas
@@ -529,6 +551,417 @@ def _hex(color) -> str | None:
     if min(rgb) >= 245:
         return None
     return "#{:02X}{:02X}{:02X}".format(*rgb)
+
+
+# --------------------------------------------------------------------------
+# SVG
+# --------------------------------------------------------------------------
+#
+# Dos formas, en este orden:
+#
+# 1. Con convencion (docs/mapas-svg.md): cada butaca es una figura cuyo
+#    nombre es su asiento ("A-12", "AA-3"), dentro de una capa con el nombre
+#    de la zona ("Luneta"). Asi lo exportan Illustrator (id) e Inkscape
+#    (inkscape:label) sin tocar codigo. Tambien sirven data-fila,
+#    data-numero y data-zona.
+# 2. Sin convencion: como el PDF. Numeros con su letra de fila y la zona por
+#    el color de la casilla.
+#
+# Se lee con la libreria estandar: expat 2.4+ corta las bombas de entidades
+# y no descarga entidades externas. Ademas hay tope de elementos.
+
+MAX_ELEMENTOS_SVG = 200_000
+# "A-12", "AA3", "A 7" o, con fila que lleva numero (palcos), "P1-4".
+_ASIENTO = re.compile(
+    r"(?P<fila>[A-Za-z]{1,3}\d{0,2})[-_ ](?P<numero>\d{1,4})"
+    r"|(?P<fila_sola>[A-Za-z]{1,3})(?P<numero_pegado>\d{1,4})"
+)
+_FIGURAS = {"circle", "ellipse", "rect", "path", "polygon", "polyline", "use", "line"}
+_NOMBRES_DE_COLOR = {
+    "black": "#000000", "white": None, "red": "#FF0000", "green": "#008000",
+    "blue": "#0000FF", "yellow": "#FFFF00", "orange": "#FFA500",
+    "purple": "#800080", "pink": "#FFC0CB", "gray": "#808080", "grey": "#808080",
+}  # fmt: skip
+
+Matriz = tuple[float, float, float, float, float, float]
+_IDENTIDAD: Matriz = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+
+def leer_svg(contenido: bytes) -> Lectura:
+    import xml.etree.ElementTree as ET
+
+    try:
+        raiz = ET.fromstring(contenido)
+    except ET.ParseError as exc:
+        raise MapaInvalido(
+            "No pudimos leer el SVG. Vuelve a exportarlo desde el programa de "
+            "diseño (Illustrator: Archivo > Exportar > SVG)."
+        ) from exc
+    if _local(raiz.tag) != "svg":
+        raise MapaInvalido("El archivo no es un SVG.")
+    if sum(1 for _ in raiz.iter()) > MAX_ELEMENTOS_SVG:
+        raise MapaInvalido("El SVG trae demasiados elementos para un mapa.")
+
+    clases = _estilos_por_clase(raiz)
+    con_nombre: list[ButacaLeida] = []
+    fichas: list[_Ficha] = []
+    casillas: list[tuple[float, float, float, float, str]] = []
+
+    def recorrer(el, m: Matriz, relleno: str | None, zona: str | None) -> None:
+        etiqueta = _local(el.tag)
+        if etiqueta in {"defs", "symbol", "clipPath", "mask", "style", "title", "desc"}:
+            return
+        m = _por(m, _transformacion(el.get("transform", "")))
+        relleno = _relleno(el, clases, relleno)
+        asiento = _asiento(el)
+        if asiento and (etiqueta in _FIGURAS or etiqueta == "g"):
+            caja = _caja_de(el, m) if etiqueta != "g" else _caja_de_grupo(el, m)
+            if caja:
+                color = relleno if etiqueta != "g" else _relleno_de_grupo(el, clases)
+                con_nombre.append(
+                    ButacaLeida(
+                        zona=(el.get("data-zona") or zona or ""),
+                        fila=asiento[0],
+                        numero=asiento[1],
+                        x=(caja[0] + caja[2]) / 2,
+                        y=(caja[1] + caja[3]) / 2,
+                        color=_hex_css(color),
+                        kill=(
+                            el.get("data-kill", "").lower() in {"1", "si", "sí", "true"}
+                        ),
+                    )
+                )
+            return
+        if etiqueta == "g":
+            nombre = _nombre_de(el)
+            if nombre and not _ASIENTO.fullmatch(nombre):
+                zona = el.get("data-zona") or nombre
+            for hijo in el:
+                recorrer(hijo, m, relleno, zona)
+            return
+        if etiqueta == "text":
+            fichas.extend(_fichas_de_texto(el, m))
+            return
+        if etiqueta in _FIGURAS:
+            color = _hex_css(relleno)
+            caja = _caja_de(el, m)
+            if color and caja:
+                casillas.append((*caja, color))
+            return
+        for hijo in el:
+            recorrer(hijo, m, relleno, zona)
+
+    recorrer(raiz, _IDENTIDAD, "#000000", None)
+
+    if con_nombre:
+        return _de_convencion(con_nombre)
+    return _por_texto("svg", fichas, casillas)
+
+
+def _de_convencion(butacas: list[ButacaLeida]) -> Lectura:
+    """Zonas por capa; lo que no venga en una capa con nombre, por color."""
+    avisos: list[str] = []
+    sin_capa = [b for b in butacas if not b.zona]
+    if sin_capa:
+        colores: dict[str | None, float] = {}
+        for b in sin_capa:
+            colores[b.color] = min(colores.get(b.color, b.y), b.y)
+        orden = sorted((c for c in colores if c), key=lambda c: colores[c])
+        nombres: dict[str | None, str] = {
+            c: f"Zona {i}" for i, c in enumerate(orden, 1)
+        }
+        nombres[None] = "Sin zona"
+        for b in sin_capa:
+            b.zona = nombres[b.color]
+        avisos.append(
+            f"{len(sin_capa)} butacas no están dentro de una capa con nombre de "
+            "zona; se agruparon por color."
+        )
+    return Lectura(origen="svg", butacas=butacas, avisos=avisos)
+
+
+def _local(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _nombre_de(el) -> str:
+    """El nombre que le puso la persona: data-, inkscape:label o id de Illustrator."""
+    for clave, valor in el.attrib.items():
+        if _local(clave) == "label" and valor.strip():
+            return valor.strip()
+    crudo = el.get("id", "")
+    # Illustrator codifica simbolos (_x2D_ es "-") y numera repetidos (_1_).
+    crudo = re.sub(r"_x([0-9A-Fa-f]{2,4})_", lambda m: chr(int(m.group(1), 16)), crudo)
+    crudo = re.sub(r"_\d+_$", "", crudo)
+    return crudo.replace("_", " ").strip()
+
+
+def _asiento(el) -> tuple[str, str] | None:
+    fila, numero = el.get("data-fila"), el.get("data-numero")
+    if fila and numero:
+        return fila.strip().upper()[:8], numero.strip()[:8]
+    m = _ASIENTO.fullmatch(_nombre_de(el))
+    if not m:
+        return None
+    fila = m.group("fila") or m.group("fila_sola")
+    numero = m.group("numero") or m.group("numero_pegado")
+    return fila.upper(), str(int(numero))
+
+
+def _estilos_por_clase(raiz) -> dict[str, str]:
+    """`.st0{fill:#F7EE41;}` de Illustrator: clase -> relleno."""
+    reglas: dict[str, str] = {}
+    for el in raiz.iter():
+        if _local(el.tag) != "style" or not el.text:
+            continue
+        for selectores, cuerpo in re.findall(r"([^{}]+)\{([^}]*)\}", el.text):
+            relleno = re.search(r"(?:^|;)\s*fill\s*:\s*([^;]+)", cuerpo)
+            if not relleno:
+                continue
+            for sel in selectores.split(","):
+                sel = sel.strip()
+                if sel.startswith(".") and re.fullmatch(r"\.[\w-]+", sel):
+                    reglas[sel[1:]] = relleno.group(1).strip()
+    return reglas
+
+
+def _relleno(el, clases: dict[str, str], heredado: str | None) -> str | None:
+    estilo = re.search(r"(?:^|;)\s*fill\s*:\s*([^;]+)", el.get("style", ""))
+    if estilo:
+        return estilo.group(1).strip()
+    if el.get("fill"):
+        return el.get("fill")
+    for clase in el.get("class", "").split():
+        if clase in clases:
+            return clases[clase]
+    return heredado
+
+
+def _relleno_de_grupo(el, clases: dict[str, str]) -> str | None:
+    """El color de una butaca dibujada como grupo (figura + numero)."""
+    for hijo in el.iter():
+        if _local(hijo.tag) in _FIGURAS:
+            color = _relleno(hijo, clases, None)
+            if _hex_css(color):
+                return color
+    return None
+
+
+def _hex_css(color: str | None) -> str | None:
+    if not color:
+        return None
+    color = color.strip().lower()
+    if color in {"none", "transparent"} or color.startswith("url("):
+        return None
+    if color in _NOMBRES_DE_COLOR:
+        return _NOMBRES_DE_COLOR[color]
+    m = re.fullmatch(r"#([0-9a-f]{3}|[0-9a-f]{6})", color)
+    if m:
+        h = m.group(1)
+        h = "".join(c * 2 for c in h) if len(h) == 3 else h
+        return None if h == "ffffff" else "#" + h.upper()
+    m = re.fullmatch(
+        r"rgba?\(\s*([\d.]+)%?\s*,\s*([\d.]+)%?\s*,\s*([\d.]+)%?.*\)", color
+    )
+    if m:
+        rgb = [max(0, min(255, round(float(v)))) for v in m.groups()]
+        return None if min(rgb) >= 250 else "#{:02X}{:02X}{:02X}".format(*rgb)
+    return None
+
+
+def _num(valor: str | None, defecto: float = 0.0) -> float:
+    m = re.match(r"\s*(-?[\d.]+(?:e-?\d+)?)", valor or "")
+    try:
+        return float(m.group(1)) if m else defecto
+    except ValueError:
+        return defecto
+
+
+def _por(a: Matriz, b: Matriz) -> Matriz:
+    """a x b: primero b (lo de adentro), luego a."""
+    return (
+        a[0] * b[0] + a[2] * b[1],
+        a[1] * b[0] + a[3] * b[1],
+        a[0] * b[2] + a[2] * b[3],
+        a[1] * b[2] + a[3] * b[3],
+        a[0] * b[4] + a[2] * b[5] + a[4],
+        a[1] * b[4] + a[3] * b[5] + a[5],
+    )
+
+
+def _transformacion(texto: str) -> Matriz:
+    import math
+
+    m = _IDENTIDAD
+    for nombre, args in re.findall(r"(\w+)\s*\(([^)]*)\)", texto):
+        v = [float(x) for x in re.findall(r"-?[\d.]+(?:e-?\d+)?", args)]
+        if nombre == "matrix" and len(v) == 6:
+            t = tuple(v)
+        elif nombre == "translate" and v:
+            t = (1, 0, 0, 1, v[0], v[1] if len(v) > 1 else 0)
+        elif nombre == "scale" and v:
+            t = (v[0], 0, 0, v[1] if len(v) > 1 else v[0], 0, 0)
+        elif nombre == "rotate" and v:
+            a = math.radians(v[0])
+            c, s_ = math.cos(a), math.sin(a)
+            t = (c, s_, -s_, c, 0, 0)
+            if len(v) == 3:
+                t = _por(_por((1, 0, 0, 1, v[1], v[2]), t), (1, 0, 0, 1, -v[1], -v[2]))
+        else:
+            continue
+        m = _por(m, t)  # type: ignore[arg-type]
+    return m
+
+
+def _aplicar(m: Matriz, x: float, y: float) -> tuple[float, float]:
+    return m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]
+
+
+def _caja(m: Matriz, puntos: list[tuple[float, float]]):
+    if not puntos:
+        return None
+    ps = [_aplicar(m, x, y) for x, y in puntos]
+    xs, ys = [p[0] for p in ps], [p[1] for p in ps]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _caja_de(el, m: Matriz):
+    """Caja de una figura ya transformada, para su centro y su color."""
+    e = _local(el.tag)
+    g = el.get
+    if e == "circle":
+        cx, cy, r = _num(g("cx")), _num(g("cy")), _num(g("r"))
+        return _caja(m, [(cx - r, cy - r), (cx + r, cy + r)])
+    if e == "ellipse":
+        cx, cy = _num(g("cx")), _num(g("cy"))
+        rx, ry = _num(g("rx")), _num(g("ry"))
+        return _caja(m, [(cx - rx, cy - ry), (cx + rx, cy + ry)])
+    if e in {"rect", "use"}:
+        x, y = _num(g("x")), _num(g("y"))
+        w, h = _num(g("width")), _num(g("height"))
+        return _caja(m, [(x, y), (x + w, y + h)])
+    if e == "line":
+        return _caja(
+            m, [(_num(g("x1")), _num(g("y1"))), (_num(g("x2")), _num(g("y2")))]
+        )
+    if e in {"polygon", "polyline"}:
+        v = [float(x) for x in re.findall(r"-?[\d.]+(?:e-?\d+)?", g("points", ""))]
+        return _caja(m, list(zip(v[::2], v[1::2], strict=False)))
+    if e == "path":
+        return _caja(m, _puntos_de_ruta(g("d", "")))
+    return None
+
+
+def _caja_de_grupo(el, m: Matriz):
+    cajas = []
+    for hijo in el:
+        if _local(hijo.tag) in _FIGURAS:
+            c = _caja_de(hijo, _por(m, _transformacion(hijo.get("transform", ""))))
+            if c:
+                cajas.append(c)
+    if not cajas:
+        return None
+    return (
+        min(c[0] for c in cajas),
+        min(c[1] for c in cajas),
+        max(c[2] for c in cajas),
+        max(c[3] for c in cajas),
+    )
+
+
+def _puntos_de_ruta(d: str) -> list[tuple[float, float]]:
+    """Los puntos de una ruta: basta para su caja (las curvas, por sus extremos)."""
+    fichas = re.findall(r"[MmLlHhVvCcSsQqTtAaZz]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?", d)
+    puntos: list[tuple[float, float]] = []
+    x = y = x0 = y0 = 0.0
+    cmd = ""
+    i = 0
+    tam = {
+        "M": 2,
+        "L": 2,
+        "H": 1,
+        "V": 1,
+        "C": 6,
+        "S": 4,
+        "Q": 4,
+        "T": 2,
+        "A": 7,
+        "Z": 0,
+    }
+    while i < len(fichas) and len(puntos) < 5000:
+        f = fichas[i]
+        if f.isalpha():
+            cmd = f
+            i += 1
+            if cmd in "Zz":
+                x, y = x0, y0
+            continue
+        n = tam.get(cmd.upper(), 0)
+        if n == 0 or i + n > len(fichas):
+            break
+        v = [float(t) for t in fichas[i : i + n]]
+        i += n
+        rel = cmd.islower()
+        c = cmd.upper()
+        if c == "H":
+            x = x + v[0] if rel else v[0]
+        elif c == "V":
+            y = y + v[0] if rel else v[0]
+        else:
+            nx, ny = v[-2], v[-1]
+            x, y = (x + nx, y + ny) if rel else (nx, ny)
+        if c == "M":
+            x0, y0 = x, y
+            cmd = "l" if rel else "L"  # pares que siguen a un M son lineas
+        puntos.append((x, y))
+    return puntos
+
+
+def _fichas_de_texto(el, m: Matriz) -> list[_Ficha]:
+    """Un <text> como ficha: su posicion es la linea base, se estima su caja."""
+    texto = "".join(el.itertext()).strip()
+    if not texto:
+        return []
+    tam = _num(el.get("font-size"), 0) or _num(
+        (re.search(r"font-size\s*:\s*([\d.]+)", el.get("style", "")) or [None, "10"])[
+            1
+        ],
+        10,
+    )
+    x, y = _num(el.get("x")), _num(el.get("y"))
+    # Un <tspan> con su propia posicion (Illustrator lo hace asi a veces).
+    if not el.get("x"):
+        for hijo in el:
+            if _local(hijo.tag) == "tspan" and hijo.get("x"):
+                x, y = _num(hijo.get("x")), _num(hijo.get("y"), y)
+                break
+    ancho = len(texto) * tam * 0.55
+    ancla = (
+        el.get("text-anchor")
+        or (
+            re.search(r"text-anchor\s*:\s*(\w+)", el.get("style", ""))
+            or [None, "start"]
+        )[1]
+    )
+    x0 = x - ancho / 2 if ancla == "middle" else x - ancho if ancla == "end" else x
+    caja = _caja(m, [(x0, y - tam * 0.75), (x0 + ancho, y + tam * 0.2)])
+    if not caja:
+        return []
+    # Un texto con varios numeros ("15 14 13"): cada palabra en su parte del ancho.
+    fichas = []
+    largo = len(texto)
+    for palabra in re.finditer(r"\S+", texto):
+        a, b = palabra.start() / largo, palabra.end() / largo
+        fichas.append(
+            _Ficha(
+                palabra.group(),
+                caja[0] + (caja[2] - caja[0]) * a,
+                caja[1],
+                caja[0] + (caja[2] - caja[0]) * b,
+                caja[3],
+            )
+        )
+    return fichas
 
 
 # --------------------------------------------------------------------------

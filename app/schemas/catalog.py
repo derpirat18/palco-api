@@ -112,7 +112,7 @@ class MapaDibujoResponse(BaseModel):
 
 
 class LeerArchivoDeMapaRequest(BaseModel):
-    """El archivo del recinto (CSV, Excel o PDF) en base64."""
+    """El archivo del recinto (CSV, Excel, PDF o SVG) en base64."""
 
     archivo: Linea = Field(min_length=1, max_length=200)
     # 2.8 MB de archivo son ~3.75 millones de caracteres en base64.
@@ -138,7 +138,7 @@ class ZonaLeidaResponse(BaseModel):
 class LecturaDeMapaResponse(BaseModel):
     """Lo que se encontro en el archivo; se guarda despues con `importar`."""
 
-    origen: Literal["csv", "xlsx", "pdf"]
+    origen: Literal["csv", "xlsx", "pdf", "svg"]
     total: int
     zonas: list[ZonaLeidaResponse]
     butacas: list[ButacaLeidaResponse]

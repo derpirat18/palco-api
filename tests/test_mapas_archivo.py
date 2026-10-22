@@ -297,3 +297,114 @@ async def test_solo_psd_lee_archivos(cliente_http, usuarios):
         },
     )
     assert r.status_code == 403
+
+
+# --- SVG ----------------------------------------------------------------------
+
+# Como lo exporta Illustrator: capas con id, "-" codificado como _x2D_,
+# repetidos con _1_, colores en clases y la capa movida con transform.
+SVG_ILLUSTRATOR = """<?xml version="1.0" encoding="utf-8"?>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">
+<style type="text/css">
+  .st0{fill:#7C3AED;}
+  .st1,.st2{fill:#16A34A;}
+</style>
+<g id="Escenario"><rect x="100" y="10" width="200" height="20" fill="#222222"/></g>
+<g id="Luneta" transform="translate(50,60)">
+  <circle id="A_x2D_1" class="st0" cx="0" cy="0" r="6"/>
+  <circle id="A_x2D_2" class="st0" cx="20" cy="0" r="6"/>
+  <circle id="A_x2D_3_1_" class="st0" cx="40" cy="0" r="6"/>
+</g>
+<g id="Balcon_General">
+  <g id="B-1">
+    <rect class="st1" x="50" y="150" width="12" height="12"/>
+    <text x="53" y="160">1</text>
+  </g>
+  <path id="B-2" class="st2" d="M70 150 h12 v12 h-12 z"/>
+</g>
+</svg>"""
+
+
+def test_svg_de_illustrator_con_capas_por_zona():
+    lectura = leer_archivo("plano.svg", SVG_ILLUSTRATOR.encode())
+    assert lectura.origen == "svg"
+    assert lectura.zonas() == [
+        ("Luneta", "#7C3AED", 3),
+        ("Balcon General", "#16A34A", 2),
+    ]
+    asientos = {(b.fila, b.numero) for b in lectura.butacas}
+    assert asientos == {("A", "1"), ("A", "2"), ("A", "3"), ("B", "1"), ("B", "2")}
+    a1 = next(b for b in lectura.butacas if (b.fila, b.numero) == ("A", "1"))
+    a3 = next(b for b in lectura.butacas if (b.fila, b.numero) == ("A", "3"))
+    b1 = next(b for b in lectura.butacas if (b.fila, b.numero) == ("B", "1"))
+    # El translate de la capa cuenta: la A queda arriba de la B y en orden.
+    assert a1.x < a3.x and a1.y < b1.y
+    assert lectura.avisos == []
+
+
+def test_svg_de_inkscape_y_con_data():
+    svg = """<svg xmlns="http://www.w3.org/2000/svg"
+      xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+      <g inkscape:label="Palcos" inkscape:groupmode="layer">
+        <rect inkscape:label="P1-1" x="10" y="10" width="10" height="10"
+          style="fill:#e11d48"/>
+        <rect inkscape:label="P1-2" x="30" y="10" width="10" height="10"
+          style="fill:#e11d48"/>
+      </g>
+      <circle data-zona="Pista" data-fila="AA" data-numero="7" data-kill="si"
+        cx="50" cy="80" r="5" fill="#000"/>
+    </svg>"""
+    lectura = leer_archivo("plano.svg", svg.encode())
+    assert [(b.zona, b.fila, b.numero, b.kill) for b in lectura.butacas] == [
+        ("Palcos", "P1", "1", False),
+        ("Palcos", "P1", "2", False),
+        ("Pista", "AA", "7", True),
+    ]
+
+
+def test_svg_sin_convencion_se_lee_como_el_pdf():
+    partes = ['<svg xmlns="http://www.w3.org/2000/svg">']
+    for fila, y, color in (("A", 20, "#FF0000"), ("B", 40, "#0000FF")):
+        partes.append(f'<text x="5" y="{y + 9}" font-size="8">{fila}</text>')
+        for i, n in enumerate((3, 2, 1)):
+            x = 20 + i * 18
+            partes.append(
+                f'<rect x="{x}" y="{y}" width="16" height="12" fill="{color}"/>'
+            )
+            partes.append(f'<text x="{x + 4}" y="{y + 9}" font-size="8">{n}</text>')
+    partes.append("</svg>")
+    lectura = leer_archivo("plano.svg", "".join(partes).encode())
+    assert len(lectura.butacas) == 6
+    assert lectura.zonas() == [("Zona 1", "#FF0000", 3), ("Zona 2", "#0000FF", 3)]
+
+
+def test_svg_sin_butacas():
+    with pytest.raises(MapaInvalido) as exc:
+        leer_archivo(
+            "plano.svg", b'<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>'
+        )
+    assert "SVG" in exc.value.mensaje
+
+
+def test_svg_con_bomba_de_entidades_se_rechaza():
+    entidades = '<!ENTITY a "aaaaaaaaaa">' + "".join(
+        f'<!ENTITY {c} "{("&" + p + ";") * 10}">'
+        for p, c in zip("abcdefg", "bcdefgh", strict=True)
+    )
+    bomba = f'<?xml version="1.0"?><!DOCTYPE svg [{entidades}]><svg>&h;</svg>'
+    with pytest.raises(MapaInvalido):
+        leer_archivo("plano.svg", bomba.encode())
+
+
+def test_svg_no_lee_archivos_del_servidor():
+    externa = (
+        '<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]>'
+        '<svg xmlns="http://www.w3.org/2000/svg"><text x="1" y="1">&x;</text></svg>'
+    )
+    with pytest.raises(MapaInvalido):
+        leer_archivo("plano.svg", externa.encode())
+
+
+def test_un_xml_que_no_es_svg():
+    with pytest.raises(MapaInvalido):
+        leer_archivo("plano.svg", b"<?xml version='1.0'?><html><svg></svg></html>")
