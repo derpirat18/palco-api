@@ -15,6 +15,7 @@ cryptography==50.0.2
 dnspython==2.9.0
 ecdsa==0.19.2
 email-validator==2.3.0
+et-xmlfile==2.0.0
 fastapi==0.146.0
 greenlet==3.5.6
 h11==0.16.0
@@ -24,7 +25,9 @@ httpx==0.28.1
 idna==3.20
 Mako==1.4.3
 MarkupSafe==3.0.4
+openpyxl==3.1.5
 opentelemetry-api==1.45.1
+pdfminer.six==20260107
 phonenumbers==9.0.41
 psycopg==3.3.6
 psycopg-binary==3.3.6

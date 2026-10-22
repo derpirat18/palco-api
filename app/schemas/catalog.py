@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -109,6 +109,40 @@ class MapaDibujoResponse(BaseModel):
             total_butacas=mapa.total_butacas,
             total_vendibles=mapa.total_vendibles,
         )
+
+
+class LeerArchivoDeMapaRequest(BaseModel):
+    """El archivo del recinto (CSV, Excel o PDF) en base64."""
+
+    archivo: Linea = Field(min_length=1, max_length=200)
+    # 2.8 MB de archivo son ~3.75 millones de caracteres en base64.
+    contenido_base64: str = Field(min_length=4, max_length=3_800_000)
+
+
+class ButacaLeidaResponse(BaseModel):
+    zona: str
+    fila: str
+    numero: str
+    x: float
+    y: float
+    color: str | None
+    kill: bool
+
+
+class ZonaLeidaResponse(BaseModel):
+    nombre: str
+    color: str | None
+    butacas: int
+
+
+class LecturaDeMapaResponse(BaseModel):
+    """Lo que se encontro en el archivo; se guarda despues con `importar`."""
+
+    origen: Literal["csv", "xlsx", "pdf"]
+    total: int
+    zonas: list[ZonaLeidaResponse]
+    butacas: list[ButacaLeidaResponse]
+    avisos: list[str]
 
 
 class ImportarMapaRequest(BaseModel):

@@ -23,6 +23,10 @@ dependencies = [
     "segno>=1.6",
     # Zonas horarias en Windows, que no trae la base de datos de zonas.
     "tzdata>=2024.1",
+    # Mapas de recintos desde Excel y PDF (app/services/mapas_archivo.py).
+    # Las dos son MIT y Python puro.
+    "openpyxl>=3.1",
+    "pdfminer.six>=20250506",
 ]
 
 [project.optional-dependencies]

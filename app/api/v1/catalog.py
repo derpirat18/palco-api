@@ -4,7 +4,11 @@ Los routers son delgados: validan, delegan en el servicio y aplican
 autorizacion. Ninguna regla de negocio vive aqui.
 """
 
+import base64
+import binascii
+
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 
 from app.api.deps import DB, UsuarioActual, requiere_rol, verificar_acceso_cliente
@@ -19,6 +23,8 @@ from app.schemas.catalog import (
     FuncionCrear,
     FuncionResponse,
     ImportarMapaRequest,
+    LecturaDeMapaResponse,
+    LeerArchivoDeMapaRequest,
     MapaDibujoResponse,
     PrecioResponse,
     PreciosRequest,
@@ -28,8 +34,10 @@ from app.schemas.catalog import (
     ZonaResponse,
 )
 from app.services.catalog import CatalogService, ConflictoDeCatalogo, slugify
+from app.services.mapas_archivo import leer_archivo
 from app.services.seat_maps import (
     EspecificacionDeMapa,
+    MapaInvalido,
     calcular_viewport,
     generar_mapa,
     importar_mapa_csv,
@@ -204,6 +212,34 @@ async def vista_previa_de_csv(datos: ImportarMapaRequest) -> MapaDibujoResponse:
     if datos.ajustar_viewport:
         mapa.viewport = calcular_viewport(mapa)
     return MapaDibujoResponse.de(mapa)
+
+
+@router.post(
+    "/seat-maps/leer-archivo",
+    response_model=LecturaDeMapaResponse,
+    dependencies=[solo_psd],
+    tags=["catalogo"],
+)
+async def leer_archivo_de_mapa(
+    datos: LeerArchivoDeMapaRequest,
+) -> LecturaDeMapaResponse:
+    """Butacas de un CSV, Excel o PDF, para revisarlas antes de importar.
+
+    No guarda nada. Leer un PDF toma un par de segundos: corre en un hilo
+    aparte para no frenar a los compradores mientras tanto.
+    """
+    try:
+        contenido = base64.b64decode(datos.contenido_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise MapaInvalido("No pudimos recibir el archivo. Vuelve a elegirlo.") from exc
+    lectura = await run_in_threadpool(leer_archivo, datos.archivo, contenido)
+    return LecturaDeMapaResponse(
+        origen=lectura.origen,
+        total=len(lectura.butacas),
+        zonas=[{"nombre": n, "color": c, "butacas": k} for n, c, k in lectura.zonas()],
+        butacas=[vars(b) for b in lectura.butacas],
+        avisos=lectura.avisos,
+    )
 
 
 @router.get(
