@@ -53,6 +53,16 @@ provider "aws" {
   }
 }
 
+# Lo que es de la cuenta: certificado de la pagina y remitente (entornos/dominio).
+data "terraform_remote_state" "dominio" {
+  backend = "s3"
+  config = {
+    bucket = "palco-tfstate-530629633953"
+    key    = "dominio/terraform.tfstate"
+    region = "us-east-2"
+  }
+}
+
 module "palco" {
   source = "../../modulos/palco"
 
@@ -91,10 +101,20 @@ module "palco" {
     dias_de_copias = 0
   }
 
-  # La pagina de compra vive en la misma direccion de CloudFront que la API
-  # (front_url vacio). localhost: el front corriendo en la computadora.
+  # Un subdominio de pruebas: produccion se queda con psdevents.com y www.
+  # La direccion de CloudFront sigue sirviendo (el webhook de Stripe de
+  # pruebas apunta ahi).
+  dominio = {
+    zona                   = data.terraform_remote_state.dominio.outputs.dominio
+    sitio                  = ["pruebas.psdevents.com"]
+    origen                 = "origen-pruebas.psdevents.com"
+    certificado_cloudfront = data.terraform_remote_state.dominio.outputs.certificado_pagina
+  }
+
+  # La pagina de compra vive en la misma direccion que la API (front_url
+  # vacio). localhost: el front corriendo en la computadora.
   cors_origenes      = ["http://localhost:5173"]
-  correo_remitente   = "Palco Sandbox <juanmanuel@psdigital.mx>"
+  correo_remitente   = "PSD Pruebas <pruebas@psdevents.com>"
   turnstile_site_key = "1x00000000000000000000AA" # prueba de Cloudflare: aprueba siempre
 
   dias_de_registros        = 7
@@ -123,6 +143,10 @@ output "comando_migrar" {
 
 output "url_front" {
   value = module.palco.url_front
+}
+
+output "url_cloudfront" {
+  value = module.palco.url_cloudfront
 }
 
 output "bucket_front" {

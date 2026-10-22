@@ -1,7 +1,7 @@
 # Quien puede hablar con quien. Todo lo que no esta aqui esta cerrado.
 #
 #   internet  -> balanceador     80 / 443 (sin CloudFront)
-#   CloudFront -> balanceador    80       (con CloudFront: nadie mas entra)
+#   CloudFront -> balanceador    443 con dominio, 80 sin el (nadie mas entra)
 #   balanceador -> contenedores  8000
 #   contenedores -> PostgreSQL   5432
 #   contenedores -> Valkey       6379
@@ -18,6 +18,9 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
   name = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
+# Un solo puerto: 443 con dominio (HTTPS hasta el balanceador), 80 sin el.
+# No van los dos porque la lista de CloudFront cuenta como ~55 reglas y el
+# grupo admite 60.
 resource "aws_vpc_security_group_ingress_rule" "balanceador_desde_cloudfront" {
   count = var.con_cloudfront ? 1 : 0
 
@@ -25,8 +28,8 @@ resource "aws_vpc_security_group_ingress_rule" "balanceador_desde_cloudfront" {
   description       = "Solo CloudFront"
   prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
   ip_protocol       = "tcp"
-  from_port         = 80
-  to_port           = 80
+  from_port         = local.con_https ? 443 : 80
+  to_port           = local.con_https ? 443 : 80
 }
 
 resource "aws_vpc_security_group_ingress_rule" "balanceador_http" {

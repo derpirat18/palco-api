@@ -42,6 +42,39 @@ terraform apply -var imagen_tag=<commit>
 - Desplegar es cambiar `imagen_tag`. Antes, correr la migración
   (`terraform output comando_migrar`).
 
+## Dominio
+
+`psdevents.com`, con su zona en Route 53. En GoDaddy solo se cambiaron los
+servidores de nombres por los de la zona. `entornos/dominio` guarda lo que es
+de la cuenta y comparten los dos entornos:
+
+- el certificado de `psdevents.com` y `*.psdevents.com` en Virginia (CloudFront
+  solo toma certificados de ahi);
+- el dominio como remitente en SES de Ohio: DKIM, MAIL FROM (`correo.psdevents.com`)
+  y DMARC.
+
+Cada entorno pone sus nombres con la variable `dominio` del modulo:
+
+| Entorno | Pagina | Balanceador (origen de CloudFront) |
+|---|---|---|
+| sandbox | `pruebas.psdevents.com` | `origen-pruebas.psdevents.com` |
+| produccion | `psdevents.com` (`www` redirige) | `origen.psdevents.com` |
+
+Con dominio, de CloudFront al balanceador tambien va por HTTPS. La direccion
+`*.cloudfront.net` sigue sirviendo.
+
+```powershell
+cd infra\entornos\dominio
+$env:AWS_PROFILE = "palco-tf"
+terraform init
+terraform plan -out plan.tfplan
+terraform apply plan.tfplan
+```
+
+Se corre una vez, cuando el dominio ya responde con los servidores de AWS
+(`Resolve-DnsName psdevents.com -Type NS -Server 8.8.8.8`); antes, el certificado
+no se valida. Despues, los entornos.
+
 ## Produccion
 
 `entornos/produccion`: el mismo modulo con tamanos para vender (2 copias de la API,
@@ -53,14 +86,14 @@ Antes de la primera vez:
 
 1. Cuenta en plan de pago y la region Mexico activada (Cuenta -> Regiones).
 2. `.\scripts\revisar_region.ps1 -Region mx-central-1`: si algo sale FALTA, Ohio.
-3. Remitente verificado en SES de Ohio y SES fuera del modo de pruebas.
+3. `entornos/dominio` aplicado y SES de Ohio fuera del modo de pruebas.
 4. Llaves de Turnstile de produccion en Cloudflare.
 
 ```powershell
 cd infra\entornos\produccion
 $env:AWS_PROFILE = "palco-tf"
 terraform init
-terraform plan -var imagen_tag=<commit> -var correo_remitente="..." -var turnstile_site_key=<llave> -out plan.tfplan
+terraform plan -var imagen_tag=<commit> -var correo_remitente="PSD Boletera <boletos@psdevents.com>" -var turnstile_site_key=<llave> -out plan.tfplan
 terraform apply plan.tfplan
 ```
 

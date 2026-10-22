@@ -10,7 +10,8 @@
 # Antes de la primera vez (ver infra/README.md, "Produccion"):
 #   - cuenta en plan de pago y la region Mexico activada
 #   - .\scripts\revisar_region.ps1 -Region mx-central-1
-#   - remitente verificado en SES de Ohio y SES fuera del modo de pruebas
+#   - entornos/dominio aplicado (certificado y remitente de psdevents.com)
+#   - SES de Ohio fuera del modo de pruebas
 #   - llaves de Turnstile de produccion (Cloudflare)
 #
 # Uso (PowerShell, desde esta carpeta):
@@ -60,7 +61,7 @@ variable "region" {
 }
 
 variable "correo_remitente" {
-  description = "Remitente de los boletos, p. ej. \"PSD Boletera <boletos@psdigital.mx>\". Verificado en SES de Ohio."
+  description = "Remitente de los boletos, p. ej. \"PSD Boletera <boletos@psdevents.com>\". Del dominio verificado en SES de Ohio (entornos/dominio)."
   type        = string
 }
 
@@ -107,6 +108,16 @@ provider "aws" {
   }
 }
 
+# Lo que es de la cuenta: certificado de la pagina y remitente (entornos/dominio).
+data "terraform_remote_state" "dominio" {
+  backend = "s3"
+  config = {
+    bucket = "palco-tfstate-530629633953"
+    key    = "dominio/terraform.tfstate"
+    region = "us-east-2"
+  }
+}
+
 module "palco" {
   source = "../../modulos/palco"
 
@@ -150,7 +161,15 @@ module "palco" {
     dias_de_copias = 0
   }
 
-  # Solo el dominio de CloudFront (el mismo de la API); sin localhost.
+  # www manda a psdevents.com (cdn.tf).
+  dominio = {
+    zona                   = data.terraform_remote_state.dominio.outputs.dominio
+    sitio                  = ["psdevents.com", "www.psdevents.com"]
+    origen                 = "origen.psdevents.com"
+    certificado_cloudfront = data.terraform_remote_state.dominio.outputs.certificado_pagina
+  }
+
+  # La pagina y la API en el mismo dominio; sin localhost.
   cors_origenes      = []
   correo_remitente   = var.correo_remitente
   turnstile_site_key = var.turnstile_site_key
@@ -165,6 +184,10 @@ output "url_api" {
 
 output "url_front" {
   value = module.palco.url_front
+}
+
+output "url_cloudfront" {
+  value = module.palco.url_cloudfront
 }
 
 output "repositorio_imagenes" {

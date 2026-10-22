@@ -1,7 +1,7 @@
 output "url_api" {
   description = "Donde responde la API."
   value = (var.con_cloudfront
-    ? "https://${aws_cloudfront_distribution.api[0].domain_name}/api/v1"
+    ? "${local.url_publica}/api/v1"
     : "${local.con_https ? "https" : "http"}://${aws_lb.palco.dns_name}/api/v1"
   )
 }
@@ -40,6 +40,11 @@ output "comando_migrar" {
 
 output "url_front" {
   description = "Donde vive la pagina de compra."
+  value       = local.url_publica
+}
+
+output "url_cloudfront" {
+  description = "La direccion de CloudFront, que sigue sirviendo aunque haya dominio."
   value       = var.con_cloudfront ? "https://${aws_cloudfront_distribution.api[0].domain_name}" : ""
 }
 

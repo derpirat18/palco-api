@@ -12,7 +12,12 @@
 # reusaria conexiones ya cerradas y daria 502.
 
 locals {
-  con_https = var.certificado_arn != ""
+  # Con dominio, el certificado del balanceador lo saca dominio.tf.
+  con_https = local.con_dominio || var.certificado_arn != ""
+  certificado_balanceador = (local.con_dominio
+    ? aws_acm_certificate_validation.origen[0].certificate_arn
+    : var.certificado_arn
+  )
 }
 
 resource "aws_lb" "palco" {
@@ -85,7 +90,7 @@ resource "aws_lb_listener" "https" {
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = var.certificado_arn
+  certificate_arn   = local.certificado_balanceador
 
   default_action {
     type             = "forward"

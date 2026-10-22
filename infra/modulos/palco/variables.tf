@@ -122,9 +122,31 @@ variable "con_cloudfront" {
 }
 
 variable "certificado_arn" {
-  description = "Certificado de ACM para HTTPS. Vacio = solo HTTP (sandbox sin dominio todavia)."
+  description = "Certificado de ACM para HTTPS en el balanceador, sin CloudFront. Con dominio no hace falta: lo crea dominio.tf."
   type        = string
   default     = ""
+}
+
+variable "dominio" {
+  description = <<-EOT
+    El dominio de PSD en este entorno (ver dominio.tf). null = solo la direccion de CloudFront.
+      zona                   = la zona de Route 53 (psdevents.com)
+      sitio                  = nombres de la pagina; el primero es el principal y los demas redirigen a el
+      origen                 = nombre del balanceador para CloudFront (HTTPS de punta a punta)
+      certificado_cloudfront = ARN del certificado de Virginia (salida de entornos/dominio)
+  EOT
+  type = object({
+    zona                   = string
+    sitio                  = list(string)
+    origen                 = string
+    certificado_cloudfront = string
+  })
+  default = null
+
+  validation {
+    condition     = var.dominio == null || length(try(var.dominio.sitio, [])) > 0
+    error_message = "dominio.sitio necesita al menos un nombre."
+  }
 }
 
 variable "dias_de_registros" {

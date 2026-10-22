@@ -17,17 +17,20 @@
 # El front si se guarda en cache: sus archivos llevan huella en el nombre;
 # index.html se sube con "no-cache" para que un despliegue se vea al momento.
 #
-# OJO, solo en sandbox sin dominio: de CloudFront al balanceador va por
-# HTTP dentro de la red de AWS. Con dominio y certificado en el balanceador,
-# el origen pasa a HTTPS (origin_protocol_policy).
+# Sin dominio, de CloudFront al balanceador va por HTTP. Con dominio
+# (dominio.tf) la pagina responde en psdevents.com y el balanceador en su
+# propio nombre con certificado: HTTPS de punta a punta.
 
 locals {
   encabezado_origen = "X-Palco-Origen"
-  # Base de las ligas de los correos: la direccion publica, salvo que el
-  # entorno fije otra (el dominio de PSD).
-  front_url = var.front_url != "" ? var.front_url : (
-    var.con_cloudfront ? "https://${aws_cloudfront_distribution.api[0].domain_name}" : ""
+  # La direccion publica de la pagina: el dominio de PSD si el entorno lo
+  # tiene, si no la de CloudFront.
+  url_publica = (local.con_dominio && var.con_cloudfront
+    ? "https://${local.sitio_principal}"
+    : (var.con_cloudfront ? "https://${aws_cloudfront_distribution.api[0].domain_name}" : "")
   )
+  # Base de las ligas de los correos, salvo que el entorno fije otra.
+  front_url = var.front_url != "" ? var.front_url : local.url_publica
 }
 
 # El secreto que solo nuestra distribucion le manda al balanceador.
@@ -122,16 +125,31 @@ resource "aws_s3_bucket_policy" "front" {
 # archivos: se responde index.html y React decide que pagina mostrar. Se
 # hace con una funcion y no con "paginas de error" de CloudFront, porque
 # esas aplican a toda la distribucion y taparian los 404 de la API.
+#
+# Con dominio, los nombres secundarios (www.psdevents.com) mandan al
+# principal con la misma ruta: una sola direccion para compartir y una sola
+# sesion del panel. La cadena de consulta no se pasa.
 resource "aws_cloudfront_function" "rutas_del_front" {
   count = var.con_cloudfront ? 1 : 0
 
   name    = "${local.nombre}-rutas-del-front"
   runtime = "cloudfront-js-2.0"
-  comment = "Rutas sin extension -> /index.html"
+  comment = "Nombres secundarios -> principal; rutas sin extension -> /index.html"
   publish = true
   code    = <<-JS
+    var PRINCIPAL = ${jsonencode(local.sitio_principal)};
+    var MUDAN = ${jsonencode(local.sitios_que_mudan)};
+
     function handler(event) {
       var request = event.request;
+      var host = request.headers.host ? request.headers.host.value : "";
+      if (MUDAN.indexOf(host) !== -1) {
+        return {
+          statusCode: 301,
+          statusDescription: "Moved Permanently",
+          headers: { location: { value: "https://" + PRINCIPAL + request.uri } }
+        };
+      }
       var ultimo = request.uri.split("/").pop();
       if (ultimo.indexOf(".") === -1) {
         request.uri = "/index.html";
@@ -154,9 +172,12 @@ resource "aws_cloudfront_distribution" "api" {
   # la mas cercana.
   price_class = "PriceClass_All"
 
+  aliases = local.con_dominio ? var.dominio.sitio : []
+
   origin {
-    origin_id   = "balanceador"
-    domain_name = aws_lb.palco.dns_name
+    origin_id = "balanceador"
+    # Con dominio, el nombre que trae el certificado del balanceador.
+    domain_name = local.con_dominio ? aws_route53_record.origen[0].fqdn : aws_lb.palco.dns_name
 
     custom_origin_config {
       http_port                = 80
@@ -216,6 +237,13 @@ resource "aws_cloudfront_distribution" "api" {
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = true
+    cloudfront_default_certificate = !local.con_dominio
+    acm_certificate_arn            = local.con_dominio ? var.dominio.certificado_cloudfront : null
+    ssl_support_method             = local.con_dominio ? "sni-only" : null
+    minimum_protocol_version       = local.con_dominio ? "TLSv1.2_2021" : null
   }
+
+  # Que la regla del encabezado secreto ya este en el escuchador al que
+  # CloudFront va a llamar.
+  depends_on = [aws_lb_listener_rule.desde_cloudfront]
 }
