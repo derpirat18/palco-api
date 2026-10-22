@@ -176,6 +176,13 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     utm_campaign: Mapped[str | None] = mapped_column(String(160))
     utm_content: Mapped[str | None] = mapped_column(String(160))
     canal: Mapped[str | None] = mapped_column(String(40))
+    # A nombre de quien se hizo esta compra, tal como se escribio. El
+    # comprador (un registro por correo) no se cambia si ya existia: asi un
+    # correo ajeno no le cambia los datos a su dueno, pero la puerta y el
+    # correo de esta compra si llevan el nombre que se escribio aqui.
+    # Nulo en ordenes de antes de existir la columna.
+    nombre_snap: Mapped[str | None] = mapped_column(String(120))
+    apellidos_snap: Mapped[str | None] = mapped_column(String(120))
 
     comprador: Mapped["Customer"] = relationship(back_populates="ordenes")
     partidas: Mapped[list["OrderItem"]] = relationship(back_populates="orden")

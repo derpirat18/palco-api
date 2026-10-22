@@ -220,7 +220,9 @@ Detalle en ADR 0010. Lo que no se rompe:
   otro lado. La orden se lee como factura: subtotal (sin IVA) + IVA −
   descuento = total, y congela la tasa en `iva_pct_snap`.
 - **Congelar lo que se vendió**: `order_items` guarda `zona_snap` y
-  `asiento_snap`; `orders` guarda `comision_pct_snap`. Las liquidaciones
+  `asiento_snap`; `orders` guarda `comision_pct_snap` y el nombre escrito en
+  esa compra (`nombre_snap`, `apellidos_snap`), que es el que usan la puerta y
+  el correo: el registro del comprador no se cambia si su correo ya existía. Las liquidaciones
   suman esos valores, **nunca** recalculan desde la configuración vigente
   del cliente. Si mañana cambia una comisión, el histórico no se mueve.
 - **Enumeraciones**: texto con `CHECK`, no tipo `ENUM` de Postgres.

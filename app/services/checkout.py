@@ -315,6 +315,8 @@ class CheckoutService:
             utm_campaign=a.utm_campaign,
             utm_content=a.utm_content,
             canal=a.canal,
+            nombre_snap=comprador.nombre.strip()[:120] or None,
+            apellidos_snap=(comprador.apellidos or "").strip()[:120] or None,
         )
         try:
             async with self.db.begin_nested():

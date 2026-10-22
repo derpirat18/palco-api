@@ -187,6 +187,7 @@ class CortesiaService:
                 # Nada que capturar: sin esto el barrido intentaria cobrarla.
                 capturada_en=func.now(),
                 canal=CANAL,
+                nombre_snap=nombre.strip()[:120] or None,
             )
             self.db.add(orden)
             await self.db.flush()

@@ -101,7 +101,10 @@ def _mensaje(
     partes = [recinto.nombre, recinto.direccion, recinto.ciudad]
     donde = ", ".join(p for p in partes if p)
     enlace = enlace_a_boletos(orden.uuid)
-    saludo = f"Hola, {comprador.nombre}" if comprador.nombre else "Hola"
+    # El nombre que se escribio en esta compra; el del registro, si es una
+    # orden de antes de guardarlo.
+    nombre = orden.nombre_snap or comprador.nombre
+    saludo = f"Hola, {nombre}" if nombre else "Hola"
     imagenes = [
         Imagen(cid=f"qr-{b.codigo}", png=png_del_qr(b.qr), texto=b.qr) for b in validos
     ]
