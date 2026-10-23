@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
-from app.core.errors import RecursoNoEncontrado
+from app.core.errors import CUENTA_NO_EXISTE, RecursoNoEncontrado
 from app.core.security import PermisoInsuficiente, TokenInvalido, decodificar_token
 from app.models.acceso import AsignacionDeAcceso
 from app.models.base import RolUsuario
@@ -151,3 +151,35 @@ async def verificar_acceso_evento(
     )
     if asignado is None:
         raise RecursoNoEncontrado(no_encontrado)
+
+
+def verificar_cuenta_administrable(usuario: User, cuenta: User) -> None:
+    """Quien puede tocar una cuenta del personal desde el panel (U2).
+
+    PSD, cualquiera de organizador o de acceso. Un organizador, solo las de
+    acceso de su propio organizador: ni las de otro organizador ni las de
+    sus compañeros organizadores. Lo que no puede tocar no existe para él.
+    """
+    if usuario.rol == RolUsuario.ADMIN_PSD:
+        return
+    if cuenta.rol != RolUsuario.ACCESO or cuenta.client_id != usuario.client_id:
+        raise RecursoNoEncontrado(CUENTA_NO_EXISTE)
+
+
+def organizador_de_cuenta_nueva(
+    usuario: User, rol: str, client_id: int | None
+) -> int | None:
+    """El organizador de una cuenta que se crea desde el panel.
+
+    PSD elige el organizador (y si falta, el servicio lo dice). Un
+    organizador solo crea personal de acceso, y siempre para sí mismo: su
+    client_id lo pone el servidor, nunca la petición.
+    """
+    if usuario.rol == RolUsuario.ADMIN_PSD:
+        return client_id
+    if rol != RolUsuario.ACCESO:
+        raise PermisoInsuficiente(
+            "Como organizador solo puedes crear cuentas de control de acceso.",
+            {"rol": rol},
+        )
+    return usuario.client_id

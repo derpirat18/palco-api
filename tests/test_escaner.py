@@ -2,8 +2,10 @@
 
 Lo que importa:
 
-- Una cuenta de acceso solo ve y escanea los eventos a los que PSD la
-  asigno. Para todo lo demas, el evento no existe (mismo 404).
+- Una cuenta de acceso solo ve y escanea los eventos a los que PSD o su
+  organizador la asignaron. Para todo lo demas, el evento no existe.
+- Cada funcion escanea solo en su horario: de 4 h antes a 12 h despues.
+- Una entrada por error se deshace (PSD u organizador) y queda constancia.
 - Un boleto entra una sola vez, aunque dos puertas lo lean a la vez.
 - Reintentar la misma lectura (la red se cayo) no la vuelve "ya entro".
 - La puerta ve zona, asiento y nombre; nunca correo ni telefono.
@@ -56,6 +58,13 @@ async def boletos_de(db, orden_uuid) -> list[Ticket]:
     )
 
 
+async def abrir_puerta(db, pid, en=timedelta(hours=1)) -> None:
+    """La funcion empieza pronto: su horario de escaneo ya esta abierto."""
+    funcion = await db.get(Performance, pid)
+    funcion.inicia_en = datetime.now(UTC) + en
+    await db.flush()
+
+
 async def leer(cliente_http, usuarios, pid, codigo, quien="acceso", scan_id=None):
     return await cliente_http.post(
         f"{API}/performances/{pid}/escanear",
@@ -68,6 +77,7 @@ async def leer(cliente_http, usuarios, pid, codigo, quien="acceso", scan_id=None
 async def puerta(cliente_http, db, esc, usuarios):  # noqa: F811
     """Funcion con una cortesia de dos boletos y la cuenta de acceso asignada."""
     pid = esc["performance_id"]
+    await abrir_puerta(db, pid)
     orden = (
         await otorgar(cliente_http, usuarios, pid, esc["seat_ids"][:2], nombre="Lupe")
     ).json()
@@ -150,7 +160,7 @@ async def test_el_organizador_sigue_viendo_todos_sus_eventos(
     assert len(funciones) == 2
 
 
-async def test_solo_psd_asigna_y_solo_a_eventos_del_mismo_organizador(
+async def test_asignan_psd_y_el_organizador_solo_a_eventos_del_mismo_organizador(
     cliente_http,
     db,
     clientes,
@@ -159,10 +169,27 @@ async def test_solo_psd_asigna_y_solo_a_eventos_del_mismo_organizador(
 ):
     ajeno = await funcion_a_la_venta(db, clientes[1].id)
 
+    # El organizador asigna a su propio personal (U2).
     r = await asignar(cliente_http, usuarios, [esc["event_id"]], quien="org_a")
-    assert r.status_code == 403
+    assert r.status_code == 200, r.text
+    assert [e["event_id"] for e in r.json()] == [esc["event_id"]]
     r = await asignar(cliente_http, usuarios, [esc["event_id"]], quien="acceso")
     assert r.status_code == 403
+    # Para el organizador, un evento ajeno no existe: ni su nombre sale.
+    igual_que_inexistente(
+        await asignar(cliente_http, usuarios, [ajeno["event_id"]], quien="org_a"),
+        await asignar(cliente_http, usuarios, [999999], quien="org_a"),
+    )
+    # Y el personal de otro organizador tampoco.
+    igual_que_inexistente(
+        await asignar(cliente_http, usuarios, [ajeno["event_id"]], quien="org_b"),
+        await cliente_http.put(
+            f"{API}/usuarios/999999/eventos",
+            json={"event_ids": [ajeno["event_id"]]},
+            headers=de(usuarios, "org_b"),
+        ),
+    )
+    await asignar(cliente_http, usuarios, [])
 
     r = await asignar(cliente_http, usuarios, [ajeno["event_id"]])
     assert r.status_code == 409
@@ -280,7 +307,7 @@ async def test_boleto_de_otra_funcion_no_entra_ni_se_gasta(
     sabado = Performance(
         event_id=puerta["event_id"],
         seat_map_id=(await db.get(Performance, puerta["pid"])).seat_map_id,
-        inicia_en=datetime.now(UTC) + timedelta(days=21),
+        inicia_en=datetime.now(UTC) + timedelta(hours=2),
         estado=EstadoFuncion.PROGRAMADA.value,
     )
     db.add(sabado)
@@ -344,6 +371,7 @@ async def test_veinte_puertas_el_mismo_boleto_entra_una_vez(motor_con_commit):
         s.add(cliente)
         await s.flush()
         esc_ = await funcion_a_la_venta(s, cliente.id)
+        await abrir_puerta(s, esc_["performance_id"])
         puerta_ = User(
             email="puerta@concurrencia.mx",
             nombre="Puerta",
@@ -389,3 +417,249 @@ async def test_veinte_puertas_el_mismo_boleto_entra_una_vez(motor_con_commit):
             )
         )
     assert validos == 1
+
+
+# --------------------------------------------------------------------------
+# Horario de escaneo (E3c)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("empieza_en", "motivo"),
+    [(timedelta(hours=5), "todavia_no"), (timedelta(hours=-13), "ya_termino")],
+)
+async def test_fuera_de_horario_no_toca_el_boleto(
+    cliente_http, db, puerta, usuarios, empieza_en, motivo
+):
+    await abrir_puerta(db, puerta["pid"], en=empieza_en)
+    b = puerta["boletos"][0]
+
+    r = await leer(cliente_http, usuarios, puerta["pid"], contenido_del_qr(b.uuid))
+
+    cuerpo = r.json()
+    assert r.status_code == 200, r.text
+    assert (cuerpo["resultado"], cuerpo["motivo"]) == ("fuera_de_horario", motivo)
+    assert cuerpo["boleto"] is None
+    assert cuerpo["abre_en"] and cuerpo["cierra_en"]
+    assert (await db.get(Ticket, b.id, populate_existing=True)).estado == "valido"
+    lecturas = await db.scalar(
+        select(func.count(Scan.id)).where(Scan.ticket_id == b.id)
+    )
+    assert lecturas == 0
+
+
+async def test_justo_en_el_horario_si_entra(cliente_http, db, puerta, usuarios):
+    # 3 h 50 min antes de empezar: el escaneo ya abrió (abre 4 h antes).
+    await abrir_puerta(db, puerta["pid"], en=timedelta(hours=3, minutes=50))
+    qr = contenido_del_qr(puerta["boletos"][0].uuid)
+    assert (await leer(cliente_http, usuarios, puerta["pid"], qr)).json()[
+        "resultado"
+    ] == "valido"
+
+
+async def test_funcion_cancelada_no_escanea(cliente_http, db, puerta, usuarios):
+    funcion = await db.get(Performance, puerta["pid"])
+    funcion.estado = EstadoFuncion.CANCELADA.value
+    await db.flush()
+    qr = contenido_del_qr(puerta["boletos"][0].uuid)
+    cuerpo = (await leer(cliente_http, usuarios, puerta["pid"], qr)).json()
+    assert (cuerpo["resultado"], cuerpo["motivo"]) == (
+        "fuera_de_horario",
+        "funcion_cancelada",
+    )
+
+
+async def test_la_lista_de_funciones_dice_cuando_abre(
+    cliente_http, db, puerta, usuarios
+):
+    await abrir_puerta(db, puerta["pid"], en=timedelta(days=1))
+    funciones = (
+        await cliente_http.get(
+            f"{API}/acceso/funciones", headers=de(usuarios, "acceso")
+        )
+    ).json()
+    f = funciones[0]
+    abre = datetime.fromisoformat(f["escaneo_abre_en"])
+    inicia = datetime.fromisoformat(f["inicia_en"])
+    assert inicia - abre == timedelta(hours=4)
+
+
+# --------------------------------------------------------------------------
+# Deshacer una entrada (E3d)
+# --------------------------------------------------------------------------
+
+
+async def deshacer(cliente_http, usuarios, pid, codigo, quien="org_a", motivo=None):
+    return await cliente_http.post(
+        f"{API}/performances/{pid}/entradas/deshacer",
+        json={"codigo": codigo, "motivo": motivo or "Se escaneó por error"},
+        headers=de(usuarios, quien),
+    )
+
+
+async def test_deshacer_regresa_el_boleto_y_deja_constancia(
+    cliente_http, db, puerta, usuarios
+):
+    b = puerta["boletos"][0]
+    qr = contenido_del_qr(b.uuid)
+    await leer(cliente_http, usuarios, puerta["pid"], qr)
+
+    r = await deshacer(cliente_http, usuarios, puerta["pid"], b.codigo.lower())
+
+    assert r.status_code == 200, r.text
+    assert r.json()["contador"] == {"total": 2, "usados": 0}
+    assert (await db.get(Ticket, b.id, populate_existing=True)).estado == "valido"
+    constancia = await db.scalar(
+        select(Scan).where(Scan.ticket_id == b.id, Scan.resultado == "deshecho")
+    )
+    assert (constancia.user_id, constancia.nota) == (
+        usuarios["org_a"].id,
+        "Se escaneó por error",
+    )
+    # Vuelve a entrar, y el "ya entró" de después dice la entrada nueva.
+    otra = (await leer(cliente_http, usuarios, puerta["pid"], qr)).json()
+    assert otra["resultado"] == "valido"
+    repetida = (
+        await leer(cliente_http, usuarios, puerta["pid"], qr, quien="admin")
+    ).json()
+    assert repetida["resultado"] == "duplicado"
+    assert repetida["entro_en"] == otra["escaneado_en"]
+
+
+async def test_deshacer_lo_que_no_entro_avisa(cliente_http, puerta, usuarios):
+    r = await deshacer(
+        cliente_http, usuarios, puerta["pid"], puerta["boletos"][1].codigo
+    )
+    assert r.status_code == 409
+    assert r.json()["error"]["codigo"] == "sin_entrada_que_deshacer"
+
+
+async def test_deshacer_solo_psd_y_el_organizador(cliente_http, db, puerta, usuarios):
+    b = puerta["boletos"][0]
+    await leer(cliente_http, usuarios, puerta["pid"], contenido_del_qr(b.uuid))
+    # La puerta no: podría dejar entrar dos veces el mismo boleto.
+    r = await deshacer(cliente_http, usuarios, puerta["pid"], b.codigo, quien="acceso")
+    assert r.status_code == 403
+    igual_que_inexistente(
+        await deshacer(cliente_http, usuarios, puerta["pid"], b.codigo, quien="org_b"),
+        await deshacer(cliente_http, usuarios, 999999, b.codigo, quien="org_b"),
+    )
+    # Un código que no es de esta función no existe aquí.
+    r = await deshacer(cliente_http, usuarios, puerta["pid"], "ZZZZZ-ZZZZZ")
+    assert r.status_code == 404
+    assert (await db.get(Ticket, b.id, populate_existing=True)).estado == "usado"
+    assert (
+        await deshacer(cliente_http, usuarios, puerta["pid"], b.codigo, quien="admin")
+    ).status_code == 200
+
+
+async def test_dos_a_la_vez_deshacen_una_vez(motor_con_commit):
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.base import RolUsuario
+    from app.models.users import User
+    from app.services.cortesias import CortesiaService
+    from app.services.escaner import SinEntradaQueDeshacer
+
+    async with AsyncSession(motor_con_commit, expire_on_commit=False) as s:
+        cliente = Client(nombre="Concurrencia deshacer")
+        s.add(cliente)
+        await s.flush()
+        esc_ = await funcion_a_la_venta(s, cliente.id)
+        await abrir_puerta(s, esc_["performance_id"])
+        org = User(
+            email="org@deshacer.mx",
+            nombre="Org",
+            password_hash="x",
+            rol=RolUsuario.ORGANIZADOR.value,
+            client_id=cliente.id,
+        )
+        s.add(org)
+        await s.flush()
+        emitida = await CortesiaService(s).otorgar(
+            esc_["performance_id"],
+            [esc_["seat_ids"][0]],
+            email="invitada@deshacer.mx",
+            nombre="Invitada",
+            motivo="Prensa",
+            actor_id=None,
+        )
+        await s.commit()
+        boleto = (await boletos_de(s, emitida.orden.uuid))[0]
+        funcion = await s.get(Performance, esc_["performance_id"])
+        await EscanerService(s).escanear(
+            funcion, contenido_del_qr(boleto.uuid), uuid.uuid4().hex, org
+        )
+        await s.commit()
+    pid = esc_["performance_id"]
+
+    async def deshace() -> bool:
+        async with AsyncSession(motor_con_commit, expire_on_commit=False) as s:
+            try:
+                await EscanerService(s).deshacer_entrada(
+                    await s.get(Performance, pid),
+                    boleto.codigo,
+                    await s.get(User, org.id),
+                    "por error",
+                )
+                await s.commit()
+                return True
+            except SinEntradaQueDeshacer:
+                await s.rollback()
+                return False
+
+    resultados = await asyncio.gather(*(deshace() for _ in range(5)))
+    assert resultados.count(True) == 1, resultados
+
+
+# --------------------------------------------------------------------------
+# Mapa para cortesias (C4)
+# --------------------------------------------------------------------------
+
+
+async def test_mapa_del_panel_dice_que_se_puede_dar(cliente_http, puerta, usuarios):
+    r = await cliente_http.get(
+        f"{API}/performances/{puerta['pid']}/mapa-panel", headers=de(usuarios, "org_a")
+    )
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert set(cuerpo) == {"viewport", "zonas", "butacas"}
+    por_id = {b["id"]: b for b in cuerpo["butacas"]}
+    ya_dadas = puerta["seat_ids"][:2]
+    assert all(
+        (por_id[s]["estado"], por_id[s]["situacion"]) == ("ocupada", "cortesia")
+        for s in ya_dadas
+    )
+    libre = por_id[puerta["seat_ids"][2]]
+    assert (libre["estado"], libre["situacion"]) == ("libre", "disponible")
+    # Lo que dice libre se puede dar de verdad.
+    dada = await otorgar(cliente_http, usuarios, puerta["pid"], [libre["id"]])
+    assert dada.status_code == 201, dada.text
+
+
+async def test_mapa_del_panel_solo_psd_y_el_organizador(cliente_http, puerta, usuarios):
+    ruta = f"{API}/performances/{puerta['pid']}/mapa-panel"
+    assert (
+        await cliente_http.get(ruta, headers=de(usuarios, "acceso"))
+    ).status_code == 403
+    igual_que_inexistente(
+        await cliente_http.get(ruta, headers=de(usuarios, "org_b")),
+        await cliente_http.get(
+            f"{API}/performances/999999/mapa-panel", headers=de(usuarios, "org_b")
+        ),
+    )
+
+
+async def test_la_lista_de_cortesias_dice_codigo_y_si_ya_entro(
+    cliente_http, puerta, usuarios
+):
+    b = puerta["boletos"][0]
+    await leer(cliente_http, usuarios, puerta["pid"], contenido_del_qr(b.uuid))
+    lista = (
+        await cliente_http.get(
+            f"{API}/performances/{puerta['pid']}/cortesias",
+            headers=de(usuarios, "org_a"),
+        )
+    ).json()
+    lugares = {lugar["codigo"]: lugar["entro"] for lugar in lista[0]["lugares"]}
+    assert lugares == {b.codigo: True, puerta["boletos"][1].codigo: False}

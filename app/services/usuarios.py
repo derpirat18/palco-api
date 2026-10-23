@@ -1,8 +1,9 @@
-"""Cuentas del personal que da de alta PSD desde el panel.
+"""Cuentas del personal que se dan de alta desde el panel.
 
-Solo organizadores y personal de acceso. Las cuentas de admin de PSD se
-siguen creando con `scripts/crear_usuario.py`: quien entra al panel no
-puede repartir acceso total.
+PSD da de alta organizadores y personal de acceso; un organizador, solo
+su propio personal de acceso (U2, permisos en app/api/deps.py). Las
+cuentas de admin de PSD se siguen creando con `scripts/crear_usuario.py`:
+quien entra al panel no puede repartir acceso total.
 
 La contrasena inicial la genera el sistema y se muestra una sola vez a
 quien crea la cuenta, para que se la pase a la persona (no hay correo
@@ -17,7 +18,7 @@ import secrets
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ErrorDeDominio, RecursoNoEncontrado
+from app.core.errors import CUENTA_NO_EXISTE, ErrorDeDominio, RecursoNoEncontrado
 from app.core.security import hash_password
 from app.models.base import RolUsuario
 from app.models.catalog import Client
@@ -25,7 +26,6 @@ from app.models.users import User
 from app.services.auth import normalizar_email
 
 ROLES_DEL_PANEL = {RolUsuario.ORGANIZADOR.value, RolUsuario.ACCESO.value}
-CUENTA_NO_EXISTE = "No encontramos esa cuenta."
 
 # Solo minusculas y numeros, sin los que se confunden (0/o, 1/l/i): con
 # mayusculas, letras como c/C, s/S o x/X se ven casi iguales y una persona
@@ -48,20 +48,26 @@ class UsuariosService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def listar(self, client_id: int | None = None) -> list[User]:
+    async def listar(
+        self, client_id: int | None = None, rol: str | None = None
+    ) -> list[User]:
         consulta = select(User).order_by(User.rol, User.nombre)
         if client_id is not None:
             consulta = consulta.where(User.client_id == client_id)
+        if rol is not None:
+            consulta = consulta.where(User.rol == rol)
         return list((await self.db.scalars(consulta)).all())
 
     async def crear(
-        self, email: str, nombre: str, rol: str, client_id: int
+        self, email: str, nombre: str, rol: str, client_id: int | None
     ) -> tuple[User, str]:
         if rol not in ROLES_DEL_PANEL:
             raise ConflictoDeCuenta(
                 "Desde el panel solo se crean cuentas de organizador y de "
                 "control de acceso."
             )
+        if client_id is None:
+            raise ConflictoDeCuenta("Elige el organizador de la cuenta.")
         if await self.db.get(Client, client_id) is None:
             raise RecursoNoEncontrado("El organizador no existe.")
         email = normalizar_email(email)

@@ -1,7 +1,7 @@
 """A que eventos entra cada cuenta de acceso (E3a).
 
-Por ahora las asigna PSD. Una cuenta de acceso solo puede asignarse a
-eventos de su mismo organizador: es su personal.
+Las asigna PSD o el organizador dueño de la cuenta (U2). Una cuenta de
+acceso solo puede asignarse a eventos de su mismo organizador: es su personal.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import RecursoNoEncontrado
+from app.core.errors import EVENTO_NO_EXISTE, RecursoNoEncontrado
 from app.models.acceso import AsignacionDeAcceso
 from app.models.base import RolUsuario
 from app.models.catalog import Event
@@ -37,21 +37,27 @@ class AsignacionesService:
         ]
 
     async def fijar(
-        self, usuario_id: int, event_ids: list[int], actor_id: int
+        self,
+        usuario_id: int,
+        event_ids: list[int],
+        actor_id: int,
+        alcance: int | None = None,
     ) -> list[tuple[Event, datetime]]:
-        """Deja a la cuenta exactamente en estos eventos."""
+        """Deja a la cuenta exactamente en estos eventos.
+
+        `alcance` es el organizador al que esta limitado quien asigna (None
+        para PSD): un evento de otro organizador no existe para el, ni por
+        nombre.
+        """
         usuario = await self._cuenta_de_acceso(usuario_id)
         nuevos = set(event_ids)
-        eventos = {
-            e.id: e
-            for e in (
-                await self.db.scalars(select(Event).where(Event.id.in_(nuevos)))
-            ).all()
-        }
-        if faltan := nuevos - eventos.keys():
-            raise RecursoNoEncontrado(
-                "Uno de los eventos no existe.", {"event_ids": sorted(faltan)}
-            )
+        consulta = select(Event).where(Event.id.in_(nuevos))
+        if alcance is not None:
+            consulta = consulta.where(Event.client_id == alcance)
+        eventos = {e.id: e for e in (await self.db.scalars(consulta)).all()}
+        if nuevos - eventos.keys():
+            # Sin repetir los ids: lo ajeno responde igual que lo inexistente.
+            raise RecursoNoEncontrado(EVENTO_NO_EXISTE)
         if ajenos := [
             e.nombre for e in eventos.values() if e.client_id != usuario.client_id
         ]:

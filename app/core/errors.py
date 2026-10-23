@@ -48,6 +48,7 @@ class RecursoNoEncontrado(ErrorDeDominio):
 ORGANIZADOR_NO_EXISTE = "No encontramos este organizador."
 EVENTO_NO_EXISTE = "No encontramos este evento."
 FUNCION_NO_EXISTE = "No encontramos esta función."
+CUENTA_NO_EXISTE = "No encontramos esa cuenta."
 
 
 class FuncionNoALaVenta(ErrorDeDominio):

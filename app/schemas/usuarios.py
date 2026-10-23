@@ -12,8 +12,9 @@ class CuentaCrear(BaseModel):
     email: EmailStr
     nombre: Linea = Field(min_length=2, max_length=120)
     # admin_psd no: esas cuentas se crean con el script.
-    rol: Literal["organizador", "acceso"]
-    client_id: int
+    rol: Literal["organizador", "acceso"] = "acceso"
+    # Lo elige PSD. Para un organizador lo pone el servidor: el suyo.
+    client_id: int | None = None
 
 
 class CuentaActualizar(BaseModel):

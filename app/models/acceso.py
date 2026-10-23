@@ -60,10 +60,14 @@ class ConsultaDeDatos(Base, PKMixin):
     user_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
-    # Que se consulto: por ahora el listado de ventas de una funcion.
+    # Que se consulto: el listado de ventas de una funcion o de un evento.
     recurso: Mapped[str] = mapped_column(String(40), nullable=False)
     performance_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("performances.id", ondelete="SET NULL")
+    )
+    # El listado de todo un evento (RP2) no es de una funcion: va aqui.
+    event_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("events.id", ondelete="SET NULL")
     )
     # ver: en pantalla. descargar: a Excel (sale del sistema).
     accion: Mapped[str] = mapped_column(String(16), nullable=False)

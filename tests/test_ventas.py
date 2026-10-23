@@ -7,6 +7,7 @@ escribio un comprador.
 """
 
 import io
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -25,7 +26,7 @@ from app.services.ventas import (
 from tests.test_catalog import API, igual_que_inexistente
 from tests.test_checkout import orden_iniciada
 from tests.test_cortesias import de, esc, otorgar, revocar, stripe_falso  # noqa: F401
-from tests.test_escaner import asignar, boletos_de, leer
+from tests.test_escaner import abrir_puerta, asignar, boletos_de, leer
 
 pytestmark = pytest.mark.asyncio
 
@@ -97,7 +98,9 @@ async def test_venta_web_y_cortesia_con_datos_del_comprador(
         "entro_en": None,
         "email": "ana.lopez@correo.mx",
         "telefono": "+525512345678",
+        "codigo": web[0]["codigo"],
     }
+    assert re.fullmatch(r"[0-9A-Z]{5}-[0-9A-Z]{5}", web[0]["codigo"])
     regalo = next(v for v in cuerpo["ventas"] if v["folio"] == cortesia["folio"])
     assert (regalo["canal"], regalo["motivo_cortesia"], regalo["total"]) == (
         "cortesia",
@@ -112,6 +115,7 @@ async def test_dice_quien_ya_entro_y_lo_revocado(cliente_http, db, esc, usuarios
     quitada = (await otorgar(cliente_http, usuarios, pid, [esc["seat_ids"][1]])).json()
     assert (await revocar(cliente_http, usuarios, quitada["uuid"])).status_code == 200
     await asignar(cliente_http, usuarios, [esc["event_id"]])
+    await abrir_puerta(db, pid)
     boleto = (await boletos_de(db, entra["uuid"]))[0]
     await leer(cliente_http, usuarios, pid, contenido_del_qr(boleto.uuid))
 
@@ -215,3 +219,91 @@ async def test_el_excel_no_ejecuta_lo_que_escribio_el_comprador():
 async def test_sin_sesion_no_hay_listado(cliente_http, esc):  # noqa: F811
     r = await cliente_http.get(f"{API}/performances/{esc['performance_id']}/ventas")
     assert r.status_code == 401
+
+
+async def test_una_entrada_deshecha_ya_no_sale_como_entro(
+    cliente_http,
+    db,
+    esc,  # noqa: F811
+    usuarios,
+):
+    pid = esc["performance_id"]
+    entra = (await otorgar(cliente_http, usuarios, pid, [esc["seat_ids"][0]])).json()
+    await asignar(cliente_http, usuarios, [esc["event_id"]])
+    await abrir_puerta(db, pid)
+    boleto = (await boletos_de(db, entra["uuid"]))[0]
+    await leer(cliente_http, usuarios, pid, contenido_del_qr(boleto.uuid))
+    r = await cliente_http.post(
+        f"{API}/performances/{pid}/entradas/deshacer",
+        json={"codigo": boleto.codigo, "motivo": "Se escaneó por error"},
+        headers=de(usuarios, "org_a"),
+    )
+    assert r.status_code == 200, r.text
+
+    renglon = (await ventas(cliente_http, usuarios, pid)).json()["ventas"][0]
+    assert (renglon["codigo"], renglon["entro_en"]) == (boleto.codigo, None)
+
+
+# --------------------------------------------------------------------------
+# Todo el evento en un Excel (RP2)
+# --------------------------------------------------------------------------
+
+
+async def test_excel_del_evento_con_todas_sus_funciones(
+    cliente_http,
+    db,
+    esc,  # noqa: F811
+    usuarios,
+):
+    from datetime import timedelta
+
+    from app.models.catalog import Performance
+
+    pid = esc["performance_id"]
+    await otorgar(cliente_http, usuarios, pid, [esc["seat_ids"][0]])
+    primera = await db.get(Performance, pid)
+    otra = Performance(
+        event_id=esc["event_id"],
+        seat_map_id=primera.seat_map_id,
+        inicia_en=primera.inicia_en + timedelta(days=1),
+        estado="programada",
+    )
+    db.add(otra)
+    await db.flush()
+
+    r = await cliente_http.get(
+        f"{API}/events/{esc['event_id']}/ventas.xlsx", headers=de(usuarios, "org_a")
+    )
+
+    assert r.status_code == 200, r.text
+    assert "ventas-evento-" in r.headers["content-disposition"]
+    hoja = load_workbook(io.BytesIO(r.content)).active
+    titulos = [c.value for c in hoja[1]]
+    assert titulos[:3] == ["Función", "Folio", "Fecha de compra"]
+    assert titulos[-1] == "Código"
+    assert hoja.max_row == 2  # la otra función no tiene ventas todavía
+    assert hoja.cell(2, 1).value is not None
+    consulta = await db.scalar(
+        select(ConsultaDeDatos).where(ConsultaDeDatos.event_id == esc["event_id"])
+    )
+    assert (consulta.user_id, consulta.accion, consulta.recurso) == (
+        usuarios["org_a"].id,
+        "descargar",
+        "ventas_evento",
+    )
+
+
+async def test_excel_del_evento_solo_psd_y_el_organizador(cliente_http, esc, usuarios):  # noqa: F811
+    ruta = f"{API}/events/{esc['event_id']}/ventas.xlsx"
+    assert (
+        await cliente_http.get(ruta, headers=de(usuarios, "admin"))
+    ).status_code == 200
+    assert (
+        await cliente_http.get(ruta, headers=de(usuarios, "acceso"))
+    ).status_code == 403
+    igual_que_inexistente(
+        await cliente_http.get(ruta, headers=de(usuarios, "org_b")),
+        await cliente_http.get(
+            f"{API}/events/999999/ventas.xlsx", headers=de(usuarios, "org_b")
+        ),
+    )

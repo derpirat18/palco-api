@@ -407,8 +407,11 @@ class Scan(Base, PKMixin):
     boleto: Mapped["Ticket"] = relationship(back_populates="escaneos")
 
     __table_args__ = (
+        # deshecho: alguien del personal regreso a valido un boleto que se
+        # escaneo por error (E3d). La fila queda como constancia de quien.
         CheckConstraint(
-            "resultado IN ('valido','duplicado','otra_funcion','invalido','cancelado')",
+            "resultado IN ('valido','duplicado','otra_funcion','invalido',"
+            "'cancelado','deshecho')",
             name="resultado_valido",
         ),
         Index("ix_scans_performance_escaneado", "performance_id", "escaneado_en"),

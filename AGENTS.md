@@ -98,15 +98,22 @@ en la misma fila, sin huecos (ADR 0020). La vecindad sale de la posición
 ## Autorización
 
 Tres roles: `admin_psd` ve todo, `organizador` ve solo su propio cliente,
-`acceso` solo escanea.
+`acceso` solo escanea, y solo en los eventos a los que lo asignaron
+(`verificar_acceso_evento`) y dentro del horario de cada función: de 4
+horas antes a 12 después (`horario_de_escaneo`).
 
 Toda verificación pasa por `app/api/deps.py`. Un endpoint **nunca**
 compara roles ni `client_id` a mano.
 
 - `requiere_rol(...)` restringe por rol.
 - Las cuentas de organizador y de acceso las crea PSD desde el panel
-  (`/usuarios`), con una contraseña temporal que sale una sola vez. Las de
+  (`/usuarios`), con una contraseña temporal que sale una sola vez. El
+  organizador crea y asigna solo su propio personal de acceso
+  (`organizador_de_cuenta_nueva`, `verificar_cuenta_administrable`). Las de
   `admin_psd` solo con `scripts/crear_usuario.py`: el panel no reparte acceso total.
+- Regresar a válido un boleto escaneado por error (`entradas/deshacer`) es
+  solo de PSD y el organizador, nunca de la puerta, y deja una lectura
+  `deshecho` con quién y por qué.
 - El organizador crea y edita sus eventos, pero publicarlos o retirarlos
   (el `estado` del evento) lo hace solo `admin_psd` (ADR 0021).
 - `alcance_cliente` da el `client_id` al que está limitado el usuario, o

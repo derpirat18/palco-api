@@ -1,6 +1,8 @@
-"""Cuentas del personal que PSD da de alta desde el panel.
+"""Cuentas del personal que se dan de alta desde el panel.
 
-Lo que importa: solo PSD crea cuentas, nunca de admin; la contrasena
+Lo que importa: PSD crea cuentas de organizador y de acceso; el
+organizador, solo su propio personal de acceso (U2), y lo ajeno no existe
+para él; nunca se crean admins; la contrasena
 temporal sale una sola vez y sirve para entrar; desactivar corta el
 acceso en la siguiente peticion.
 """
@@ -77,16 +79,103 @@ async def test_el_listado_filtra_por_organizador(cliente_http, usuarios, cliente
     assert all(c["client_id"] == clientes[1].id for c in r.json())
 
 
-async def test_solo_psd_administra_cuentas(cliente_http, usuarios, clientes):
-    for quien in ("org_a", "org_b"):
-        tk = token_de(usuarios[quien])
-        assert (
-            await crear(cliente_http, tk, client_id=clientes[0].id)
-        ).status_code == 403
-        assert (
-            await cliente_http.get(f"{API}/usuarios", headers=auth(tk))
-        ).status_code == 403
+async def test_la_puerta_no_administra_cuentas(cliente_http, usuarios, clientes):
+    tk = token_de(usuarios["acceso"])
+    assert (await crear(cliente_http, tk, client_id=clientes[0].id)).status_code == 403
+    assert (
+        await cliente_http.get(f"{API}/usuarios", headers=auth(tk))
+    ).status_code == 403
     assert (await cliente_http.get(f"{API}/usuarios")).status_code == 401
+
+
+# --------------------------------------------------------------------------
+# El organizador y su personal de acceso (U2)
+# --------------------------------------------------------------------------
+
+
+async def test_el_organizador_crea_su_personal_siempre_para_si(
+    cliente_http, usuarios, clientes
+):
+    tk = token_de(usuarios["org_a"])
+    # Aunque mande otro organizador, la cuenta queda con el suyo.
+    r = await crear(cliente_http, tk, client_id=clientes[1].id)
+    assert r.status_code == 201, r.text
+    cuenta = r.json()["cuenta"]
+    assert (cuenta["rol"], cuenta["client_id"]) == ("acceso", clientes[0].id)
+    login = await entrar(
+        cliente_http, "taquilla@circo.mx", r.json()["password_temporal"]
+    )
+    assert login.status_code == 200
+    # Sin client_id también: es el suyo.
+    otra = await crear(cliente_http, tk, email="puerta2@circo.mx")
+    assert otra.json()["cuenta"]["client_id"] == clientes[0].id
+
+
+async def test_el_organizador_no_crea_organizadores(cliente_http, usuarios):
+    r = await crear(cliente_http, token_de(usuarios["org_a"]), rol="organizador")
+    assert r.status_code == 403
+    assert r.json()["error"]["codigo"] == "permiso_insuficiente"
+
+
+async def test_psd_tiene_que_elegir_organizador(cliente_http, usuarios):
+    r = await crear(cliente_http, token_de(usuarios["admin"]))
+    assert r.status_code == 409
+    assert "organizador" in r.json()["error"]["mensaje"]
+
+
+async def test_el_organizador_ve_y_toca_solo_su_personal(
+    cliente_http, usuarios, clientes
+):
+    admin = token_de(usuarios["admin"])
+    de_b = (
+        await crear(cliente_http, admin, client_id=clientes[1].id, email="b@teatro.mx")
+    ).json()["cuenta"]
+    tk = token_de(usuarios["org_a"])
+
+    lista = (await cliente_http.get(f"{API}/usuarios", headers=auth(tk))).json()
+    # Su personal de acceso, nada más: ni PSD, ni otros organizadores, ni el de B.
+    assert {c["email"] for c in lista} == {usuarios["acceso"].email}
+    assert all(c["rol"] == "acceso" for c in lista)
+
+    inexistente = await cliente_http.patch(
+        f"{API}/usuarios/999999", headers=auth(tk), json={"activo": False}
+    )
+    for ajena in (de_b["id"], usuarios["org_a"].id, usuarios["admin"].id):
+        igual = await cliente_http.patch(
+            f"{API}/usuarios/{ajena}", headers=auth(tk), json={"activo": False}
+        )
+        assert (igual.status_code, igual.json()) == (
+            inexistente.status_code,
+            inexistente.json(),
+        ), ajena
+        r = await cliente_http.post(
+            f"{API}/usuarios/{ajena}/restablecer", headers=auth(tk)
+        )
+        assert r.status_code == 404, ajena
+
+    propia = usuarios["acceso"].id
+    r = await cliente_http.post(
+        f"{API}/usuarios/{propia}/restablecer", headers=auth(tk)
+    )
+    assert r.status_code == 200
+    r = await cliente_http.patch(
+        f"{API}/usuarios/{propia}", headers=auth(tk), json={"activo": False}
+    )
+    assert r.json()["activo"] is False
+
+
+async def test_psd_sigue_administrando_el_personal_de_todos(
+    cliente_http, usuarios, clientes
+):
+    tk = token_de(usuarios["admin"])
+    lista = (await cliente_http.get(f"{API}/usuarios", headers=auth(tk))).json()
+    assert {usuarios["acceso"].email, usuarios["org_a"].email} <= {
+        c["email"] for c in lista
+    }
+    r = await cliente_http.post(
+        f"{API}/usuarios/{usuarios['acceso'].id}/restablecer", headers=auth(tk)
+    )
+    assert r.status_code == 200
 
 
 async def test_no_se_crean_admins_desde_el_panel(cliente_http, usuarios, clientes):

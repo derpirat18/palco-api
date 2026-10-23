@@ -18,10 +18,13 @@ from app.schemas.cortesias import (
     CortesiaRequest,
     CortesiaResponse,
     LugarDeCortesiaResponse,
+    MapaDelPanelResponse,
 )
 from app.services.catalog import CatalogService
 from app.services.cortesias import CORTESIA_NO_EXISTE, CortesiaService
+from app.services.cortesias_panel import boletos_por_partida
 from app.services.inventory import InventoryService
+from app.services.mapa_panel import MapaPanelService
 
 router = APIRouter(tags=["cortesias"])
 
@@ -38,8 +41,13 @@ async def _autorizar_funcion(
 
 
 def _respuesta(
-    orden: Order, cortesia: Cortesia, persona: Customer, partidas: list[OrderItem]
+    orden: Order,
+    cortesia: Cortesia,
+    persona: Customer,
+    partidas: list[OrderItem],
+    boletos: dict[int, tuple[str, bool]] | None = None,
 ) -> CortesiaResponse:
+    boletos = boletos or {}
     return CortesiaResponse(
         uuid=orden.uuid,
         folio=orden.folio,
@@ -50,7 +58,12 @@ def _respuesta(
         otorgada_en=cortesia.otorgada_en,
         revocada_en=cortesia.revocada_en,
         lugares=[
-            LugarDeCortesiaResponse(zona=p.zona_snap, asiento=p.asiento_snap)
+            LugarDeCortesiaResponse(
+                zona=p.zona_snap,
+                asiento=p.asiento_snap,
+                codigo=boletos.get(p.id, (None, False))[0],
+                entro=boletos.get(p.id, (None, False))[1],
+            )
             for p in partidas
         ],
     )
@@ -90,9 +103,11 @@ async def listar(
     performance_id: int, db: DB, usuario: UsuarioActual
 ) -> list[CortesiaResponse]:
     await _autorizar_funcion(performance_id, db, usuario, FUNCION_NO_EXISTE)
-    return [
-        _respuesta(*fila) for fila in await CortesiaService(db).listar(performance_id)
-    ]
+    filas = await CortesiaService(db).listar(performance_id)
+    boletos = await boletos_por_partida(
+        db, [p.id for *_, partidas in filas for p in partidas]
+    )
+    return [_respuesta(*fila, boletos) for fila in filas]
 
 
 @router.post(
@@ -123,3 +138,22 @@ async def revocar(orden_uuid: UUID, db: DB, usuario: UsuarioActual) -> CortesiaR
         ).all()
     )
     return _respuesta(orden, cortesia, persona, partidas)
+
+
+@router.get(
+    "/performances/{performance_id}/mapa-panel",
+    response_model=MapaDelPanelResponse,
+    dependencies=[psd_u_organizador],
+)
+async def mapa_para_cortesias(
+    performance_id: int, db: DB, usuario: UsuarioActual
+) -> MapaDelPanelResponse:
+    """El mapa de la función con lo que se puede dar como cortesía (C4).
+
+    A diferencia del público, dice en qué está cada butaca y sirve también
+    antes de abrir la venta. Solo lee.
+    """
+    funcion = await _autorizar_funcion(performance_id, db, usuario, FUNCION_NO_EXISTE)
+    return MapaDelPanelResponse.model_validate(
+        await MapaPanelService(db).de_funcion(funcion)
+    )

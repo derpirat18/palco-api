@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.textos import Linea
+
 
 class RenglonDeAccesoResponse(BaseModel):
     """Sin correo ni telefono: esto se imprime y se queda en la puerta."""
@@ -49,6 +51,9 @@ class FuncionDePuertaResponse(BaseModel):
     estado: str
     total: int
     usados: int
+    # Horario de escaneo (E3c): fuera de el, una lectura no toca el boleto.
+    escaneo_abre_en: datetime
+    escaneo_cierra_en: datetime
 
 
 class EscaneoRequest(BaseModel):
@@ -79,7 +84,14 @@ class ContadorResponse(BaseModel):
 
 
 class EscaneoResponse(BaseModel):
-    resultado: Literal["valido", "duplicado", "otra_funcion", "invalido", "cancelado"]
+    resultado: Literal[
+        "valido",
+        "duplicado",
+        "otra_funcion",
+        "invalido",
+        "cancelado",
+        "fuera_de_horario",
+    ]
     escaneado_en: datetime
     boleto: DatosDelBoletoResponse | None
     entro_en: datetime | None
@@ -87,6 +99,8 @@ class EscaneoResponse(BaseModel):
     motivo: str | None
     su_funcion_inicia_en: datetime | None
     contador: ContadorResponse
+    abre_en: datetime | None
+    cierra_en: datetime | None
 
     model_config = {"from_attributes": True}
 
@@ -107,6 +121,7 @@ class RenglonDeVentaResponse(BaseModel):
     entro_en: datetime | None
     email: str
     telefono: str | None
+    codigo: str | None
 
     model_config = {"from_attributes": True}
 
@@ -130,3 +145,15 @@ class ListadoDeVentasResponse(BaseModel):
     ventas: list[RenglonDeVentaResponse]
 
     model_config = {"from_attributes": True}
+
+
+class DeshacerEntradaRequest(BaseModel):
+    # El codigo impreso del boleto (columna Código de Ventas).
+    codigo: str = Field(min_length=1, max_length=40)
+    # Por que: queda con la constancia ("se escaneo el de la funcion de mañana").
+    motivo: Linea = Field(min_length=3, max_length=200)
+
+
+class DeshacerEntradaResponse(BaseModel):
+    codigo: str
+    contador: ContadorResponse

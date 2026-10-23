@@ -11,6 +11,9 @@ Las dos garantias:
   condicionado (`WHERE estado = 'valido'`): si dos puertas leen el mismo
   boleto en el mismo instante, Postgres deja pasar a una y la otra ve
   "ya entro". No hay lectura-y-luego-escritura que se pueda cruzar.
+- Cada funcion acepta lecturas solo en su horario (E3c): de 4 horas antes
+  de empezar a 12 horas despues. Fuera de ahi el boleto no se toca: un
+  error del personal el jueves no deja sin entrar a quien va el viernes.
 - Una lectura repetida no cambia nada. Cada lectura trae su
   `client_scan_id` (lo genera el celular): si la red se cae y el celular
   reintenta, la respuesta es la misma de la primera vez, no un "ya entro"
@@ -22,14 +25,16 @@ Lo que se muestra es lo minimo para dejar pasar: sin correo ni telefono.
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.base import EstadoBoleto, EstadoOrden
+from app.core.errors import ErrorDeDominio, RecursoNoEncontrado
+from app.models.base import EstadoBoleto, EstadoFuncion, EstadoOrden
 from app.models.catalog import Performance
 from app.models.sales import Customer, Order, OrderItem, Scan, Ticket
 from app.models.users import User
@@ -41,6 +46,25 @@ DUPLICADO = "duplicado"
 OTRA_FUNCION = "otra_funcion"
 INVALIDO = "invalido"
 CANCELADO = "cancelado"
+# No se guarda: fuera de horario la lectura no toca nada.
+FUERA_DE_HORARIO = "fuera_de_horario"
+DESHECHO = "deshecho"
+
+# Horario de escaneo de una funcion (E3c).
+ABRE_ANTES = timedelta(hours=4)
+CIERRA_DESPUES = timedelta(hours=12)
+
+BOLETO_NO_ES_DE_LA_FUNCION = "No encontramos ese boleto en esta función."
+
+
+class SinEntradaQueDeshacer(ErrorDeDominio):
+    codigo = "sin_entrada_que_deshacer"
+    http_status = 409
+
+
+def horario_de_escaneo(funcion: Performance) -> tuple[datetime, datetime]:
+    return funcion.inicia_en - ABRE_ANTES, funcion.inicia_en + CIERRA_DESPUES
+
 
 # Codigo impreso bajo el QR: 10 caracteres Crockford base 32 (XXXXX-XXXXX).
 _CODIGO = re.compile(r"^[0-9A-Z]{10}$")
@@ -69,14 +93,18 @@ class Escaneo:
     resultado: str
     escaneado_en: datetime
     boleto: DatosDelBoleto | None = None
-    # duplicado: la primera vez que entro, y con quien.
+    # duplicado: cuando entro (la entrada vigente), y con quien.
     entro_en: datetime | None = None
     entro_con: str | None = None
     # cancelado: por que (cancelada, reembolsada, revocada, transferido).
+    # fuera_de_horario: todavia_no, ya_termino o funcion_cancelada.
     motivo: str | None = None
     # otra_funcion: cuando es la suya, si es del mismo evento.
     su_funcion_inicia_en: datetime | None = None
     contador: Contador | None = None
+    # Horario de escaneo de esta funcion.
+    abre_en: datetime | None = None
+    cierra_en: datetime | None = None
 
 
 def codigo_impreso(texto: str) -> str | None:
@@ -107,6 +135,26 @@ class EscanerService:
             return await self._repetir(previo, funcion)
 
         ahora = datetime.now(UTC)
+        abre, cierra = horario_de_escaneo(funcion)
+        fuera = (
+            "funcion_cancelada"
+            if funcion.estado == EstadoFuncion.CANCELADA.value
+            else "todavia_no"
+            if ahora < abre
+            else "ya_termino"
+            if ahora > cierra
+            else None
+        )
+        if fuera:
+            return Escaneo(
+                resultado=FUERA_DE_HORARIO,
+                escaneado_en=ahora,
+                motivo=fuera,
+                contador=await self.contador(funcion.id),
+                abre_en=abre,
+                cierra_en=cierra,
+            )
+
         boleto = await self._buscar(texto)
         resultado, motivo = await self._decidir(boleto, funcion)
 
@@ -237,7 +285,8 @@ class EscanerService:
                     cortesia=orden.canal == "cortesia",
                 )
             if resultado == DUPLICADO:
-                entro_en, entro_con = await self._primera_entrada(boleto.id)
+                entro_en, entro_con = await self._entrada_vigente(boleto.id)
+        abre, cierra = horario_de_escaneo(funcion)
         return Escaneo(
             resultado=resultado,
             escaneado_en=escaneado_en,
@@ -247,17 +296,21 @@ class EscanerService:
             motivo=motivo,
             su_funcion_inicia_en=su_funcion,
             contador=await self.contador(funcion.id),
+            abre_en=abre,
+            cierra_en=cierra,
         )
 
-    async def _primera_entrada(
+    async def _entrada_vigente(
         self, ticket_id: int
     ) -> tuple[datetime | None, str | None]:
+        """La ultima lectura que lo dejo pasar: si una entrada se deshizo y la
+        persona volvio a entrar, cuenta la segunda."""
         fila = (
             await self.db.execute(
                 select(Scan.escaneado_en, Scan.device_id, User.nombre)
                 .outerjoin(User, User.id == Scan.user_id)
                 .where(Scan.ticket_id == ticket_id, Scan.resultado == VALIDO)
-                .order_by(Scan.escaneado_en)
+                .order_by(Scan.escaneado_en.desc())
                 .limit(1)
             )
         ).first()
@@ -267,6 +320,54 @@ class EscanerService:
         if nombre:
             return escaneado_en, nombre
         return escaneado_en, "un dispositivo de acceso" if device_id else None
+
+    # ------------------------------------------------------ deshacer (E3d)
+
+    async def deshacer_entrada(
+        self, funcion: Performance, codigo: str, usuario: User, motivo: str
+    ) -> Contador:
+        """Regresa a valido un boleto que se escaneo por error.
+
+        El mismo UPDATE condicionado que al entrar, al reves: si dos personas
+        lo deshacen a la vez, una lo hace y la otra recibe "no ha entrado".
+        Queda una lectura `deshecho` con quien y por que.
+        """
+        normal = codigo_impreso(codigo)
+        boleto = None
+        if normal:
+            boleto = await self.db.scalar(
+                select(Ticket)
+                .join(OrderItem, OrderItem.id == Ticket.order_item_id)
+                .join(Order, Order.id == OrderItem.order_id)
+                .where(Ticket.codigo == normal, Order.performance_id == funcion.id)
+            )
+        if boleto is None:
+            raise RecursoNoEncontrado(BOLETO_NO_ES_DE_LA_FUNCION)
+        regresado = await self.db.scalar(
+            update(Ticket)
+            .where(Ticket.id == boleto.id, Ticket.estado == EstadoBoleto.USADO.value)
+            .values(estado=EstadoBoleto.VALIDO.value)
+            .returning(Ticket.id)
+        )
+        if regresado is None:
+            raise SinEntradaQueDeshacer(
+                "Este boleto no ha entrado: no hay nada que deshacer."
+            )
+        self.db.add(
+            Scan(
+                ticket_id=boleto.id,
+                performance_id=funcion.id,
+                user_id=usuario.id,
+                codigo_leido=boleto.codigo,
+                resultado=DESHECHO,
+                escaneado_en=datetime.now(UTC),
+                offline=False,
+                client_scan_id=f"deshacer-{uuid.uuid4().hex}",
+                nota=motivo,
+            )
+        )
+        await self.db.flush()
+        return await self.contador(funcion.id)
 
     async def contador(self, performance_id: int) -> Contador:
         """Cuantos boletos pueden entrar a la funcion y cuantos ya entraron."""

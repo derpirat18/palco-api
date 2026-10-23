@@ -1,6 +1,8 @@
 """Esquemas de cortesias (C1)."""
 
 from datetime import datetime
+from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -21,6 +23,10 @@ class CortesiaRequest(BaseModel):
 class LugarDeCortesiaResponse(BaseModel):
     zona: str
     asiento: str
+    # Para el panel (C4): el codigo impreso y si ya entro. Revocar una
+    # cortesia con un boleto que ya entro no se puede.
+    codigo: str | None = None
+    entro: bool = False
 
 
 class CortesiaResponse(BaseModel):
@@ -34,3 +40,37 @@ class CortesiaResponse(BaseModel):
     otorgada_en: datetime
     revocada_en: datetime | None
     lugares: list[LugarDeCortesiaResponse]
+
+
+class ZonaDelPanelResponse(BaseModel):
+    id: int
+    nombre: str
+    color: str | None
+    precio_desde: Decimal | None
+
+    model_config = {"from_attributes": True}
+
+
+class ButacaDelPanelResponse(BaseModel):
+    id: int
+    zona_id: int
+    fila: str
+    numero: str
+    x: Decimal
+    y: Decimal
+    # libre: se puede dar como cortesia.
+    estado: Literal["libre", "ocupada"]
+    situacion: str
+    precio: Decimal
+
+    model_config = {"from_attributes": True}
+
+
+class MapaDelPanelResponse(BaseModel):
+    """Solo para PSD y el organizador dueño: dice en qué está cada butaca."""
+
+    viewport: dict
+    zonas: list[ZonaDelPanelResponse]
+    butacas: list[ButacaDelPanelResponse]
+
+    model_config = {"from_attributes": True}

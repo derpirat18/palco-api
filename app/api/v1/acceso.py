@@ -4,7 +4,7 @@ Y el listado de ventas, que no es de la puerta pero cuelga de la misma
 funcion: lo ven PSD y el organizador, nunca el personal de acceso.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
@@ -16,11 +16,14 @@ from app.api.deps import (
     verificar_acceso_cliente,
     verificar_acceso_evento,
 )
-from app.core.errors import FUNCION_NO_EXISTE
+from app.core.errors import EVENTO_NO_EXISTE, FUNCION_NO_EXISTE
 from app.models.acceso import AsignacionDeAcceso
 from app.models.base import EstadoFuncion, RolUsuario
 from app.models.catalog import Event, Performance, Venue
 from app.schemas.acceso import (
+    ContadorResponse,
+    DeshacerEntradaRequest,
+    DeshacerEntradaResponse,
     EscaneoRequest,
     EscaneoResponse,
     FuncionDePuertaResponse,
@@ -28,9 +31,9 @@ from app.schemas.acceso import (
     ListadoDeVentasResponse,
 )
 from app.services.catalog import CatalogService
-from app.services.escaner import EscanerService
+from app.services.escaner import CIERRA_DESPUES, EscanerService, horario_de_escaneo
 from app.services.lista_de_acceso import ListaDeAccesoService
-from app.services.ventas import VentasService, a_excel
+from app.services.ventas import VentasService, a_excel, a_excel_evento
 
 router = APIRouter(tags=["acceso"])
 
@@ -41,9 +44,7 @@ personal = Depends(
 )
 psd_u_organizador = Depends(requiere_rol(RolUsuario.ADMIN_PSD, RolUsuario.ORGANIZADOR))
 
-# Una funcion sigue en la lista del escaner hasta medio dia despues de
-# empezar: hay funciones largas y gente que llega tarde.
-_VIGENCIA = timedelta(hours=12)
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 async def _funcion_de_la_puerta(performance_id: int, db: DB, usuario: UsuarioActual):
@@ -70,7 +71,8 @@ async def funciones_de_la_puerta(
         .join(Event, Event.id == Performance.event_id)
         .join(Venue, Venue.id == Event.venue_id)
         .where(
-            Performance.inicia_en >= datetime.now(UTC) - _VIGENCIA,
+            # Sigue en la lista mientras su horario de escaneo no cierre.
+            Performance.inicia_en >= datetime.now(UTC) - CIERRA_DESPUES,
             Performance.estado != EstadoFuncion.CANCELADA.value,
         )
         .order_by(Performance.inicia_en)
@@ -101,6 +103,8 @@ async def funciones_de_la_puerta(
             estado=funcion.estado,
             total=contadores[funcion.id].total,
             usados=contadores[funcion.id].usados,
+            escaneo_abre_en=horario_de_escaneo(funcion)[0],
+            escaneo_cierra_en=horario_de_escaneo(funcion)[1],
         )
         for funcion, evento, recinto in filas
     ]
@@ -174,13 +178,7 @@ async def ventas_de_funcion(
     "/performances/{performance_id}/ventas.xlsx",
     dependencies=[psd_u_organizador],
     response_class=Response,
-    responses={
-        200: {
-            "content": {
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}
-            }
-        }
-    },
+    responses={200: {"content": {XLSX: {}}}},
 )
 async def descargar_ventas(
     performance_id: int, db: DB, usuario: UsuarioActual
@@ -195,10 +193,63 @@ async def descargar_ventas(
     await db.commit()
     return Response(
         content=contenido,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        media_type=XLSX,
         headers={
             "Content-Disposition": (
                 f'attachment; filename="ventas-funcion-{funcion.id}.xlsx"'
+            ),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.post(
+    "/performances/{performance_id}/entradas/deshacer",
+    response_model=DeshacerEntradaResponse,
+    dependencies=[psd_u_organizador],
+)
+async def deshacer_entrada(
+    performance_id: int, datos: DeshacerEntradaRequest, db: DB, usuario: UsuarioActual
+) -> DeshacerEntradaResponse:
+    """Regresa a valido un boleto escaneado por error (E3d).
+
+    Solo PSD y el organizador: si el personal de la puerta pudiera, un
+    boleto podria entrar dos veces. Queda la constancia de quien y por que.
+    """
+    funcion, _ = await _funcion_del_organizador(performance_id, db, usuario)
+    contador = await EscanerService(db).deshacer_entrada(
+        funcion, datos.codigo, usuario, datos.motivo
+    )
+    await db.commit()
+    return DeshacerEntradaResponse(
+        codigo=datos.codigo.strip().upper(),
+        contador=ContadorResponse.model_validate(contador),
+    )
+
+
+@router.get(
+    "/events/{event_id}/ventas.xlsx",
+    dependencies=[psd_u_organizador],
+    response_class=Response,
+    responses={200: {"content": {XLSX: {}}}},
+)
+async def descargar_ventas_del_evento(
+    event_id: int, db: DB, usuario: UsuarioActual
+) -> Response:
+    """Todas las funciones del evento en un solo Excel, con su columna Función
+    (RP2). Queda en la bitacora como descarga del evento."""
+    evento = await CatalogService(db).obtener_evento(event_id)
+    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=EVENTO_NO_EXISTE)
+    servicio = VentasService(db)
+    contenido = a_excel_evento(await servicio.de_evento(evento))
+    await servicio.registrar(usuario.id, None, "descargar", event_id=evento.id)
+    await db.commit()
+    return Response(
+        content=contenido,
+        media_type=XLSX,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="ventas-evento-{evento.id}.xlsx"'
             ),
             "Cache-Control": "no-store",
         },
