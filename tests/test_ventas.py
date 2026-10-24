@@ -16,13 +16,13 @@ from openpyxl import load_workbook
 from sqlalchemy import select
 
 from app.models.acceso import ConsultaDeDatos
-from app.services.boletos import contenido_del_qr
 from app.services.ventas import (
     ListadoDeVentas,
     RenglonDeVenta,
     ResumenDeVentas,
     a_excel,
 )
+from tests.test_boletos import qr_de
 from tests.test_catalog import API, igual_que_inexistente
 from tests.test_checkout import orden_iniciada
 from tests.test_cortesias import de, esc, otorgar, revocar, stripe_falso  # noqa: F401
@@ -117,7 +117,7 @@ async def test_dice_quien_ya_entro_y_lo_revocado(cliente_http, db, esc, usuarios
     await asignar(cliente_http, usuarios, [esc["event_id"]])
     await abrir_puerta(db, pid)
     boleto = (await boletos_de(db, entra["uuid"]))[0]
-    await leer(cliente_http, usuarios, pid, contenido_del_qr(boleto.uuid))
+    await leer(cliente_http, usuarios, pid, qr_de(boleto))
 
     cuerpo = (await ventas(cliente_http, usuarios, pid)).json()
 
@@ -232,7 +232,7 @@ async def test_una_entrada_deshecha_ya_no_sale_como_entro(
     await asignar(cliente_http, usuarios, [esc["event_id"]])
     await abrir_puerta(db, pid)
     boleto = (await boletos_de(db, entra["uuid"]))[0]
-    await leer(cliente_http, usuarios, pid, contenido_del_qr(boleto.uuid))
+    await leer(cliente_http, usuarios, pid, qr_de(boleto))
     r = await cliente_http.post(
         f"{API}/performances/{pid}/entradas/deshacer",
         json={"codigo": boleto.codigo, "motivo": "Se escaneó por error"},

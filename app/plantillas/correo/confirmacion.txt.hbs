@@ -1,0 +1,36 @@
+¡Ya tienes tus boletos!
+Compra # {{folio}}
+
+{{evento.nombre}}
+{{funcion.fecha}} · {{funcion.hora}}
+{{recinto.nombre}}, {{recinto.ciudad}}
+{{#if funcion.apertura}}Apertura de puertas: {{funcion.apertura}} (hora local de {{recinto.ciudad}}){{else}}Hora local de {{recinto.ciudad}}{{/if}}
+
+Ver mis boletos: {{boletos_url}}
+
+Este correo no sirve para entrar al evento. En el acceso muestra el código QR de cada boleto desde «Ver mis boletos». El QR cambia cada pocos segundos: las capturas de pantalla no sirven para entrar.
+
+RESUMEN DE TU ORDEN ({{num_boletos}})
+{{#each boletos}}- {{tipo}}: Zona {{zona}} · Fila {{fila}} · Lugar {{lugar}}{{#if accesible}} (localidad para personas con discapacidad){{/if}}
+{{/each}}
+{{#if pago}}
+RESUMEN DE PAGO
+{{#each pago.partidas}}- {{descripcion}}: {{importe}}
+{{/each}}{{#if pago.descuento}}- Descuento: −{{pago.descuento}}
+{{/if}}Subtotal: {{pago.subtotal}}
+IVA incluido ({{pago.iva_pct}}%): {{pago.iva}}
+Total (precio final, sin cargos): {{pago.total}} {{pago.moneda}}
+Pagado{{#if pago.metodo}} con {{pago.metodo}}{{/if}} el {{pago.pagada_en}}.
+{{else}}
+BOLETOS DE CORTESÍA: te los regalaron, no tienen costo.
+{{/if}}
+{{#if cuentas}}{{#if es_invitado}}
+Compraste como invitado con {{comprador.email}}. Crea tu cuenta con este mismo correo y verás estos boletos en Mis boletos: {{crear_cuenta_url}}
+{{/if}}{{/if}}
+{{#if soporte_email}}
+¿Necesitas ayuda con tu compra? Escríbenos a {{soporte_email}}.
+{{/if}}
+Política de devoluciones: {{enlaces.devoluciones}}
+Aviso de privacidad: {{enlaces.aviso_privacidad}}
+
+© {{anio}} {{marca}}.{{#if empresa.razon_social}} {{empresa.razon_social}}{{#if empresa.domicilio}}, {{empresa.domicilio}}{{/if}}.{{/if}}

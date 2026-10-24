@@ -20,7 +20,6 @@ from app.models.inventory import InventoryMove, PerformanceSeat
 from app.models.outbox import OutboxEvent
 from app.models.sales import Order, OrderItem, Ticket
 from app.services.apartados import ApartadoService
-from app.services.boletos import leer_qr
 from tests.test_apartados import fila, funcion_a_la_venta, nuevo_hold
 from tests.test_barrido import barrido
 from tests.test_catalog import API, auth, token_de
@@ -101,7 +100,7 @@ async def test_otorgar_emite_boletos_con_qr_y_consume_inventario(
     # Boletos de verdad: con el QR que la puerta acepta.
     boletos = (await cliente_http.get(f"{API}/ordenes/{cuerpo['uuid']}/boletos")).json()
     assert len(boletos["boletos"]) == 2
-    assert all(leer_qr(b["qr"]) for b in boletos["boletos"])
+    assert all(b["llave_qr"] for b in boletos["boletos"]), "entran con su QR"
 
     movimientos = (
         await db.scalars(
@@ -397,10 +396,10 @@ async def test_llega_su_propio_correo(cliente_http, db, esc, usuarios):
     assert r.entregados == 1
     m = cartero.enviados[0]
     assert m.para == "prensa@medio.mx"
-    assert m.asunto.startswith("Tus boletos de cortesía para ")
-    assert len(m.imagenes) == 2
+    assert m.asunto.startswith("¡Listo! Tus boletos de cortesía para ")
+    assert m.imagenes == []
     for parte in (m.texto, m.html):
-        assert "boletos de cortesía" in parte
+        assert "boletos de cortesía" in parte.lower()
         assert "Resumen de pago" not in parte
         assert "$" not in parte
         assert "Tu compra" not in parte

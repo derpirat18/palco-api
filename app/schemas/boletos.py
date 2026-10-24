@@ -8,14 +8,15 @@ from pydantic import BaseModel
 
 class BoletoResponse(BaseModel):
     uuid: UUID
-    # Va impreso bajo el QR: es lo que se dicta en puerta si el escaner
-    # no lee.
-    codigo: str
     zona: str
     asiento: str
     estado: str
-    # El front lo dibuja como QR. Nulo si el boleto ya no puede entrar.
-    qr: str | None
+    # Llave (base64url) con que el celular genera el QR que cambia cada
+    # 30 s (BOL3). Nula si el boleto ya no puede entrar. El codigo impreso
+    # no viene: dictado o en una captura dejaria entrar sin el QR.
+    llave_qr: str | None
+    # Cuando entro, si ya entro (BOL8).
+    entro_en: datetime | None
 
 
 class FuncionDelBoletoResponse(BaseModel):
@@ -27,6 +28,8 @@ class FuncionDelBoletoResponse(BaseModel):
 class EventoDelBoletoResponse(BaseModel):
     nombre: str
     slug: str
+    # El cartel, arriba de cada boleto en el celular.
+    imagen_url: str | None = None
 
 
 class RecintoDelBoletoResponse(BaseModel):
@@ -46,3 +49,6 @@ class BoletosResponse(BaseModel):
     funcion: FuncionDelBoletoResponse
     recinto: RecintoDelBoletoResponse
     boletos: list[BoletoResponse]
+    # Para que el celular corrija su reloj al generar el QR.
+    servidor_ahora: datetime
+    paso_segundos: int

@@ -1,4 +1,8 @@
-"""Correo de confirmacion de compra, con un QR por lugar (ADR 0015).
+"""Correo de confirmacion de compra (ADR 0015, BOL1).
+
+El diseno es de Nadia (`app/plantillas/correo/`, Handlebars). El correo ya
+no lleva QR: los boletos se muestran en el celular con un QR que cambia
+cada 30 s (BOL3), y el correo lleva a ellos con "Ver mis boletos".
 
 Se arma desde la base en el momento de enviarlo, no desde el `payload`
 de la bandeja: el payload no lleva datos personales a proposito, y asi
@@ -6,208 +10,232 @@ el correo refleja el estado real (si la orden se reembolso antes de que
 saliera el correo, no se manda).
 """
 
-import io
 from datetime import datetime
 from decimal import Decimal
-from html import escape
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-import segno
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.base import EstadoOrden
-from app.models.sales import Customer
+from app.models.sales import Customer, OrderItem
 from app.services.boletos import BoletosDeLaOrden, boletos_de_la_orden
-from app.services.correo import Imagen, Mensaje
-
-_DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-_MESES = [
-    "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
-    "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-]  # fmt: skip
-
-
-def fecha_larga(momento: datetime, zona: str) -> str:
-    """'viernes 20 de noviembre de 2026, 7:00 p. m.', a la hora del recinto.
-
-    A mano y no con `locale`: el locale depende del sistema donde corre
-    (Windows, contenedor) y un servidor sin es_MX escribiria en ingles.
-    """
-    local = momento.astimezone(ZoneInfo(zona))
-    hora = local.hour % 12 or 12
-    sufijo = "a. m." if local.hour < 12 else "p. m."
-    return (
-        f"{_DIAS[local.weekday()]} {local.day} de {_MESES[local.month - 1]} "
-        f"de {local.year}, {hora}:{local.minute:02d} {sufijo}"
-    )
+from app.services.correo import Mensaje
+from app.services.plantillas import pintar_archivo
 
 
 def pesos(monto: Decimal) -> str:
     return f"${monto:,.2f}"
 
 
-def tasa(pct: Decimal) -> str:
-    """16.00 -> '16 %'; 8.50 -> '8.5 %'."""
-    texto = format(pct.normalize(), "f")
-    return f"{texto} %"
+POR = "\u00d7"  # el signo de multiplicar del diseno
+_DIAS_CORTOS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
+_MESES_CORTOS = [
+    "ene", "feb", "mar", "abr", "may", "jun",
+    "jul", "ago", "sep", "oct", "nov", "dic",
+]  # fmt: skip
 
 
-def png_del_qr(texto: str) -> bytes:
-    buf = io.BytesIO()
-    # Correccion media: aguanta una pantalla rayada o un poco de brillo.
-    segno.make(texto, error="m").save(buf, kind="png", scale=8, border=4)
-    return buf.getvalue()
+def fecha_corta(momento: datetime, zona: str) -> str:
+    """'vie, 23 oct 2026', en la hora del recinto."""
+    local = momento.astimezone(ZoneInfo(zona))
+    return (
+        f"{_DIAS_CORTOS[local.weekday()]}, {local.day} "
+        f"{_MESES_CORTOS[local.month - 1]} {local.year}"
+    )
+
+
+def hora_corta(momento: datetime, zona: str) -> str:
+    """'16:00 h', en la hora del recinto."""
+    local = momento.astimezone(ZoneInfo(zona))
+    return f"{local.hour}:{local.minute:02d} h"
 
 
 def enlace_a_boletos(orden_uuid: UUID) -> str:
-    return f"{settings.FRONT_URL.rstrip('/')}/boletos/{orden_uuid}"
+    return f"{settings.FRONT_URL.rstrip('/')}/orden/{orden_uuid}"
+
+
+def _fila_y_lugar(asiento: str) -> tuple[str, str]:
+    """'Fila A · 2' -> ('A', '2'). Si no trae fila, todo va en lugar."""
+    fila, separador, lugar = asiento.partition(" · ")
+    if not separador:
+        return "", asiento
+    return fila.removeprefix("Fila ").strip(), lugar.strip()
 
 
 async def armar_confirmacion(
-    db: AsyncSession, orden_uuid: UUID, cortesia: bool = False
+    db: AsyncSession,
+    orden_uuid: UUID,
+    cortesia: bool | None = None,
+    para_enviar: bool = True,
 ) -> Mensaje | None:
     """El correo listo para enviar, o None si ya no corresponde mandarlo.
 
-    Una cortesia lleva otro texto: no es "tu compra" y no hay resumen de
-    pago que mostrar.
+    Una cortesia no lleva resumen de pago: dice que no tiene costo. Sin
+    `cortesia`, se deduce del canal de la orden ("Ver en el navegador").
     """
     vista = await boletos_de_la_orden(db, orden_uuid)
+    if cortesia is None:
+        cortesia = vista.orden.canal == "cortesia"
     if vista.orden.estado != EstadoOrden.PAGADA.value:
         return None
-    validos = [b for b in vista.boletos if b.qr]
-    if not validos:
+    # Para enviar, solo si algun boleto puede entrar. "Ver en el navegador"
+    # lo sigue mostrando aunque ya hayan entrado todos.
+    if para_enviar and not any(b.llave_qr for b in vista.boletos):
         return None
     comprador = await db.get(Customer, vista.orden.customer_id)
-    return _mensaje(vista, comprador, validos, cortesia)
+    partidas = list(
+        (
+            await db.scalars(
+                select(OrderItem)
+                .where(
+                    OrderItem.order_id == vista.orden.id, OrderItem.anulado.is_(False)
+                )
+                .order_by(OrderItem.id)
+            )
+        ).all()
+    )
+    return _mensaje(vista, comprador, partidas, cortesia)
 
 
-def _mensaje(
-    vista: BoletosDeLaOrden, comprador: Customer, validos, cortesia: bool = False
-) -> Mensaje:
+def datos_del_correo(
+    vista: BoletosDeLaOrden,
+    comprador: Customer,
+    partidas: list[OrderItem],
+    cortesia: bool = False,
+) -> dict:
+    """Lo que llena la plantilla (la forma de `datos-ejemplo.json` de Nadia)."""
     orden, evento, funcion, recinto = (
         vista.orden,
         vista.evento,
         vista.funcion,
         vista.recinto,
     )
-    cuando = fecha_larga(funcion.inicia_en, recinto.zona_horaria)
-    puertas = (
-        fecha_larga(funcion.apertura_puertas, recinto.zona_horaria)
-        if funcion.apertura_puertas
-        else None
-    )
-    partes = [recinto.nombre, recinto.direccion, recinto.ciudad]
-    donde = ", ".join(p for p in partes if p)
-    enlace = enlace_a_boletos(orden.uuid)
-    # El nombre que se escribio en esta compra; el del registro, si es una
-    # orden de antes de guardarlo.
-    nombre = orden.nombre_snap or comprador.nombre
-    saludo = f"Hola, {nombre}" if nombre else "Hola"
-    imagenes = [
-        Imagen(cid=f"qr-{b.codigo}", png=png_del_qr(b.qr), texto=b.qr) for b in validos
-    ]
+    zona = recinto.zona_horaria
+    front = settings.FRONT_URL.rstrip("/")
+    # Los que siguen siendo suyos: los que pueden entrar y los que ya entraron.
+    validos = [b for b in vista.boletos if b.estado in ("valido", "usado")]
 
-    renglones_pago = [("Subtotal", pesos(orden.subtotal))]
-    renglones_pago.append((f"IVA ({tasa(orden.iva_pct_snap)})", pesos(orden.iva)))
-    if orden.descuento > 0:
-        renglones_pago.append(("Descuento", f"-{pesos(orden.descuento)}"))
-    renglones_pago.append(("Total", pesos(orden.total)))
-
-    if cortesia:
-        asunto = f"Tus boletos de cortesía para {evento.nombre} · {orden.folio}"
-        entrada = "Te enviamos boletos de cortesía. Estos son tus boletos."
-    else:
-        asunto = f"Tus boletos para {evento.nombre} · {orden.folio}"
-        entrada = "Tu compra está confirmada. Estos son tus boletos."
-
-    # --- Texto plano: para quien no ve HTML y para los filtros de spam.
-    lineas = [
-        f"{saludo}:",
-        "",
-        entrada,
-        "",
-        evento.nombre,
-        f"Función: {cuando}",
-    ]
-    if puertas:
-        lineas.append(f"Apertura de puertas: {puertas}")
-    lineas += [f"Lugar: {donde}", f"Folio: {orden.folio}", "", "Boletos:"]
-    lineas += [f"- {b.zona} · {b.asiento} · código {b.codigo}" for b in validos]
+    pago = None
     if not cortesia:
-        lineas += ["", "Resumen de pago:"]
-        lineas += [f"  {k}: {v}" for k, v in renglones_pago]
-    lineas += [
-        "",
-        f"Ver tus boletos con su QR: {enlace}",
-        "",
-        "Presenta cada QR en la entrada, desde tu celular o impreso. Cada "
-        "boleto entra una sola vez: no compartas tus QR.",
-    ]
-    texto = "\n".join(lineas)
+        # Agrupadas por zona y precio: "2 x Luneta, $720.00 por boleto" (con el
+        # signo de multiplicar, como en el diseno).
+        grupos: dict[tuple[str, Decimal], int] = {}
+        for p in partidas:
+            clave = (p.zona_snap, p.precio_unitario)
+            grupos[clave] = grupos.get(clave, 0) + 1
+        pago = {
+            "partidas": [
+                {
+                    "descripcion": f"{n} {POR} {zona_}",
+                    "detalle": f"{pesos(precio)} por boleto",
+                    "importe": pesos(precio * n),
+                }
+                for (zona_, precio), n in grupos.items()
+            ],
+            "descuento": pesos(orden.descuento) if orden.descuento > 0 else None,
+            "subtotal": pesos(orden.subtotal),
+            "iva_pct": format(orden.iva_pct_snap.normalize(), "f"),
+            "iva": pesos(orden.iva),
+            "total": pesos(orden.total),
+            "moneda": orden.moneda,
+            # La tarjeta (Visa •••• 4242) espera autorizacion: viene de Stripe
+            # al cobrar, zona critica.
+            "metodo": None,
+            "pagada_en": (
+                f"{fecha_corta(orden.pagada_en, zona).split(', ', 1)[1]}, "
+                f"{hora_corta(orden.pagada_en, zona)}"
+                if orden.pagada_en
+                else ""
+            ),
+        }
 
-    # --- HTML: tablas y estilos en linea, lo unico que respetan todos los
-    # clientes de correo.
-    def fila_pago(k: str, v: str, fuerte: bool = False) -> str:
-        peso = "font-weight:bold;" if fuerte else ""
-        return (
-            f'<tr><td style="padding:4px 0;{peso}">{escape(k)}</td>'
-            f'<td style="padding:4px 0;text-align:right;{peso}">{escape(v)}</td></tr>'
+    boletos = []
+    for b in validos:
+        fila, lugar = _fila_y_lugar(b.asiento)
+        boletos.append(
+            {
+                "tipo": "Boleto general",
+                "zona": b.zona,
+                "fila": fila or "—",
+                "lugar": lugar,
+                "accesible": False,
+            }
         )
 
-    boletos_html = "".join(
-        '<tr><td style="padding:16px 0;border-top:1px solid #e5e7eb;'
-        'text-align:center">'
-        f'<div style="font-size:16px;font-weight:bold">{escape(b.zona)} · '
-        f"{escape(b.asiento)}</div>"
-        f'<img src="cid:{img.cid}" width="220" height="220" alt="QR del boleto '
-        f'{escape(b.codigo)}" style="display:block;margin:8px auto">'
-        f'<div style="font-family:monospace;font-size:16px;letter-spacing:2px">'
-        f"{escape(b.codigo)}</div></td></tr>"
-        for b, img in zip(validos, imagenes, strict=True)
-    )
-    pago_html = "".join(
-        fila_pago(k, v, fuerte=(k == "Total")) for k, v in renglones_pago
-    )
-    resumen_html = (
-        ""
-        if cortesia
-        else '<h2 style="font-size:16px;margin:16px 0 8px">Resumen de pago</h2>'
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
-        f"{pago_html}</table>"
-    )
-    puertas_html = (
-        f"<p style='margin:4px 0'>Apertura de puertas: {escape(puertas)}</p>"
-        if puertas
-        else ""
-    )
-    html = f"""<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><title>{escape(asunto)}</title></head>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;color:#111827">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:8px">
-<tr><td style="padding:24px">
-<p style="margin:0 0 8px">{escape(saludo)}:</p>
-<p style="margin:0 0 16px">{escape(entrada)}</p>
-<h1 style="font-size:22px;margin:0 0 8px">{escape(evento.nombre)}</h1>
-<p style="margin:4px 0">Función: {escape(cuando)}</p>
-{puertas_html}
-<p style="margin:4px 0">Lugar: {escape(donde)}</p>
-<p style="margin:4px 0 16px">Folio: <strong>{escape(orden.folio)}</strong></p>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{boletos_html}</table>
-<p style="margin:16px 0;padding:12px;background:#f9fafb;border-radius:6px">Presenta cada QR en la entrada, desde tu celular o impreso. Cada boleto entra una sola vez: no compartas tus QR.</p>
-{resumen_html}
-<p style="margin:24px 0 0;text-align:center"><a href="{escape(enlace)}" style="display:inline-block;padding:12px 20px;background:#111827;color:#ffffff;text-decoration:none;border-radius:6px">Ver mis boletos</a></p>
-</td></tr></table>
-</td></tr></table>
-</body></html>"""  # noqa: E501
+    return {
+        "marca": settings.MARCA,
+        "assets_url": f"{front}/img/correo",
+        "ver_en_navegador_url": f"{front}/orden/{orden.uuid}/correo",
+        "folio": orden.folio,
+        "num_boletos": len(boletos),
+        # Hoy toda compra es como invitado; la invitacion a crear cuenta se
+        # enciende cuando existan las cuentas de comprador (R1).
+        "es_invitado": True,
+        "cuentas": False,
+        "comprador": {
+            "nombre": orden.nombre_snap or comprador.nombre,
+            "email": orden.email_snap or comprador.email,
+        },
+        "evento": {
+            "nombre": evento.nombre,
+            "categoria": evento.categoria,
+            "imagen_url": evento.imagen_url,
+        },
+        "funcion": {
+            "fecha": fecha_corta(funcion.inicia_en, zona),
+            "hora": hora_corta(funcion.inicia_en, zona),
+            "apertura": (
+                hora_corta(funcion.apertura_puertas, zona)
+                if funcion.apertura_puertas
+                else None
+            ),
+        },
+        "recinto": {"nombre": recinto.nombre, "ciudad": recinto.ciudad},
+        "boletos_url": enlace_a_boletos(orden.uuid),
+        "crear_cuenta_url": "",
+        "boletos": boletos,
+        "pago": pago,
+        "redes": settings.REDES_SOCIALES,
+        "soporte_email": settings.SOPORTE_EMAIL,
+        "enlaces": {
+            "inicio": f"{front}/",
+            "mi_cuenta": f"{front}/cuenta",
+            "devoluciones": f"{front}/legal/politica-de-devoluciones",
+            "aviso_privacidad": f"{front}/legal/aviso-de-privacidad",
+            "terminos": f"{front}/legal/terminos-y-condiciones",
+        },
+        "empresa": {
+            "razon_social": settings.EMPRESA_RAZON_SOCIAL,
+            "domicilio": settings.EMPRESA_DOMICILIO,
+        },
+        "anio": datetime.now(ZoneInfo(zona)).year,
+    }
 
+
+def html_del_correo(datos: dict) -> str:
+    return pintar_archivo("correo/confirmacion.hbs.html", datos)
+
+
+def _mensaje(
+    vista: BoletosDeLaOrden,
+    comprador: Customer,
+    partidas: list[OrderItem],
+    cortesia: bool = False,
+) -> Mensaje:
+    datos = datos_del_correo(vista, comprador, partidas, cortesia)
+    nombre = vista.evento.nombre
+    asunto = (
+        f"¡Listo! Tus boletos de cortesía para {nombre}"
+        if cortesia
+        else f"¡Listo! Tus boletos para {nombre}"
+    )
     return Mensaje(
         # Al correo escrito en esta compra (OB1).
-        para=orden.email_snap or comprador.email,
+        para=vista.orden.email_snap or comprador.email,
         asunto=asunto,
-        texto=texto,
-        html=html,
-        imagenes=imagenes,
+        texto=pintar_archivo("correo/confirmacion.txt.hbs", datos, escapar=False),
+        html=html_del_correo(datos),
     )

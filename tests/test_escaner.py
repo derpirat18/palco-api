@@ -24,6 +24,7 @@ from app.models.sales import Order, OrderItem, Scan, Ticket
 from app.services.boletos import contenido_del_qr
 from app.services.escaner import EscanerService
 from tests.test_apartados import funcion_a_la_venta
+from tests.test_boletos import qr_de
 from tests.test_catalog import API, igual_que_inexistente
 from tests.test_cortesias import de, esc, otorgar, revocar, stripe_falso  # noqa: F401
 
@@ -218,7 +219,7 @@ async def test_asignan_psd_y_el_organizador_solo_a_eventos_del_mismo_organizador
 
 async def test_valido_entra_y_queda_usado(cliente_http, db, puerta, usuarios):
     b = puerta["boletos"][0]
-    r = await leer(cliente_http, usuarios, puerta["pid"], contenido_del_qr(b.uuid))
+    r = await leer(cliente_http, usuarios, puerta["pid"], qr_de(b))
 
     assert r.status_code == 200, r.text
     cuerpo = r.json()
@@ -249,7 +250,7 @@ async def test_valido_entra_y_queda_usado(cliente_http, db, puerta, usuarios):
 async def test_la_segunda_vez_dice_cuando_y_con_quien_entro(
     cliente_http, puerta, usuarios
 ):
-    qr = contenido_del_qr(puerta["boletos"][0].uuid)
+    qr = qr_de(puerta["boletos"][0])
     primera = (await leer(cliente_http, usuarios, puerta["pid"], qr)).json()
 
     r = await leer(cliente_http, usuarios, puerta["pid"], qr, quien="org_a")
@@ -265,7 +266,7 @@ async def test_la_segunda_vez_dice_cuando_y_con_quien_entro(
 async def test_reintentar_la_misma_lectura_no_la_vuelve_duplicado(
     cliente_http, db, puerta, usuarios
 ):
-    qr = contenido_del_qr(puerta["boletos"][0].uuid)
+    qr = qr_de(puerta["boletos"][0])
     scan_id = uuid.uuid4().hex
 
     primera = await leer(cliente_http, usuarios, puerta["pid"], qr, scan_id=scan_id)
@@ -279,24 +280,75 @@ async def test_reintentar_la_misma_lectura_no_la_vuelve_duplicado(
     assert lecturas == 1
 
 
-async def test_codigo_impreso_escrito_a_mano(cliente_http, puerta, usuarios):
+async def test_codigo_tecleado_en_taquilla(cliente_http, puerta, usuarios):
+    """PSD o el organizador, en taquilla, dejan pasar a quien no puede
+    mostrar su QR (sin celular, pantalla estrellada)."""
     codigo = puerta["boletos"][1].codigo
     # Minusculas, sin guion y con espacios: como lo teclea alguien con prisa.
     escrito = f" {codigo.replace('-', '').lower()[:5]} {codigo[6:].lower()} "
-    r = await leer(cliente_http, usuarios, puerta["pid"], escrito)
+    r = await leer(cliente_http, usuarios, puerta["pid"], escrito, quien="org_a")
     assert r.json()["resultado"] == "valido"
     assert r.json()["boleto"]["codigo"] == codigo
 
 
+async def test_el_personal_de_acceso_no_teclea_codigos(
+    cliente_http, db, puerta, usuarios
+):
+    """En la puerta solo entra el QR que cambia: cualquier otra cosa, a
+    taquilla. Si el personal pudiera teclear, una foto del codigo entraria."""
+    b = puerta["boletos"][1]
+    r = await leer(cliente_http, usuarios, puerta["pid"], b.codigo)
+    assert r.json()["resultado"] == "invalido"
+    assert r.json()["motivo"] == "solo_taquilla"
+    assert (await db.get(Ticket, b.id, populate_existing=True)).estado == "valido"
+
+
+async def test_el_qr_fijo_del_correo_ya_no_entra(cliente_http, db, puerta, usuarios):
+    b = puerta["boletos"][0]
+    r = await leer(cliente_http, usuarios, puerta["pid"], contenido_del_qr(b.uuid))
+    assert r.json()["resultado"] == "invalido"
+    assert r.json()["motivo"] == "qr_fijo"
+    assert (await db.get(Ticket, b.id, populate_existing=True)).estado == "valido"
+    # Con el QR del celular si entra.
+    r = await leer(cliente_http, usuarios, puerta["pid"], qr_de(b))
+    assert r.json()["resultado"] == "valido"
+
+
+async def test_una_captura_de_hace_minutos_no_entra(cliente_http, db, puerta, usuarios):
+    b = puerta["boletos"][0]
+    for desfase in (-3, -20, 5):
+        r = await leer(cliente_http, usuarios, puerta["pid"], qr_de(b, desfase))
+        assert r.json()["resultado"] == "invalido", desfase
+        assert r.json()["motivo"] == "vencido"
+    assert (await db.get(Ticket, b.id, populate_existing=True)).estado == "valido"
+    # El de hace 30 s (celular un poco atrasado) si.
+    r = await leer(cliente_http, usuarios, puerta["pid"], qr_de(b, -1))
+    assert r.json()["resultado"] == "valido"
+    # Y una vez dentro, aunque el QR sea vigente, ya entro.
+    r = await leer(cliente_http, usuarios, puerta["pid"], qr_de(b))
+    assert r.json()["resultado"] == "duplicado"
+
+
+async def test_rotatorio_falso_no_dice_de_quien_es(cliente_http, puerta, usuarios):
+    b = puerta["boletos"][0]
+    falso = qr_de(b, llave="otra-llave-que-no-es-la-de-palco-000")
+    r = await leer(cliente_http, usuarios, puerta["pid"], falso)
+    assert r.json()["resultado"] == "invalido"
+    assert r.json()["boleto"] is None
+    assert r.json()["motivo"] is None
+
+
 async def test_lo_que_no_es_un_boleto_es_invalido(cliente_http, puerta, usuarios):
-    falsificado = contenido_del_qr(puerta["boletos"][0].uuid, llave="otra-llave")
+    falsificado = qr_de(
+        puerta["boletos"][0], llave="otra-llave-que-no-es-la-de-palco-000"
+    )
     for texto in (falsificado, "https://ejemplo.com", "ZZZZZ-ZZZZZ", "hola"):
         r = await leer(cliente_http, usuarios, puerta["pid"], texto)
         assert r.status_code == 200, texto
         assert r.json()["resultado"] == "invalido", texto
         assert r.json()["boleto"] is None
     # El falsificado no tumbo al de verdad.
-    real = contenido_del_qr(puerta["boletos"][0].uuid)
+    real = qr_de(puerta["boletos"][0])
     r = await leer(cliente_http, usuarios, puerta["pid"], real)
     assert r.json()["resultado"] == "valido"
 
@@ -314,7 +366,7 @@ async def test_boleto_de_otra_funcion_no_entra_ni_se_gasta(
     await db.flush()
     b = puerta["boletos"][0]
 
-    r = await leer(cliente_http, usuarios, sabado.id, contenido_del_qr(b.uuid))
+    r = await leer(cliente_http, usuarios, sabado.id, qr_de(b))
 
     cuerpo = r.json()
     assert cuerpo["resultado"] == "otra_funcion"
@@ -327,14 +379,14 @@ async def test_cortesia_revocada_no_entra(cliente_http, puerta, usuarios):
     assert (
         await revocar(cliente_http, usuarios, puerta["orden"]["uuid"])
     ).status_code == 200
-    qr = contenido_del_qr(puerta["boletos"][0].uuid)
+    qr = qr_de(puerta["boletos"][0])
     cuerpo = (await leer(cliente_http, usuarios, puerta["pid"], qr)).json()
     assert (cuerpo["resultado"], cuerpo["motivo"]) == ("cancelado", "revocada")
     assert cuerpo["contador"] == {"total": 0, "usados": 0}
 
 
 async def test_otro_organizador_no_escanea(cliente_http, puerta, usuarios):
-    qr = contenido_del_qr(puerta["boletos"][0].uuid)
+    qr = qr_de(puerta["boletos"][0])
     igual_que_inexistente(
         await leer(cliente_http, usuarios, puerta["pid"], qr, quien="org_b"),
         await leer(cliente_http, usuarios, 999999, qr, quien="org_b"),
@@ -349,7 +401,7 @@ async def test_otro_organizador_no_escanea(cliente_http, puerta, usuarios):
 async def test_la_lista_de_la_puerta_marca_quien_ya_entro(
     cliente_http, puerta, usuarios
 ):
-    qr = contenido_del_qr(puerta["boletos"][0].uuid)
+    qr = qr_de(puerta["boletos"][0])
     await leer(cliente_http, usuarios, puerta["pid"], qr)
     lista = await cliente_http.get(
         f"{API}/performances/{puerta['pid']}/lista-de-acceso",
@@ -391,7 +443,7 @@ async def test_veinte_puertas_el_mismo_boleto_entra_una_vez(motor_con_commit):
         )
         await s.commit()
         boleto = (await boletos_de(s, emitida.orden.uuid))[0]
-    pid, qr = esc_["performance_id"], contenido_del_qr(boleto.uuid)
+    pid, qr = esc_["performance_id"], qr_de(boleto)
 
     fila_de_espera = asyncio.Semaphore(10)
 
@@ -434,7 +486,7 @@ async def test_fuera_de_horario_no_toca_el_boleto(
     await abrir_puerta(db, puerta["pid"], en=empieza_en)
     b = puerta["boletos"][0]
 
-    r = await leer(cliente_http, usuarios, puerta["pid"], contenido_del_qr(b.uuid))
+    r = await leer(cliente_http, usuarios, puerta["pid"], qr_de(b))
 
     cuerpo = r.json()
     assert r.status_code == 200, r.text
@@ -451,7 +503,7 @@ async def test_fuera_de_horario_no_toca_el_boleto(
 async def test_justo_en_el_horario_si_entra(cliente_http, db, puerta, usuarios):
     # 3 h 50 min antes de empezar: el escaneo ya abrió (abre 4 h antes).
     await abrir_puerta(db, puerta["pid"], en=timedelta(hours=3, minutes=50))
-    qr = contenido_del_qr(puerta["boletos"][0].uuid)
+    qr = qr_de(puerta["boletos"][0])
     assert (await leer(cliente_http, usuarios, puerta["pid"], qr)).json()[
         "resultado"
     ] == "valido"
@@ -461,7 +513,7 @@ async def test_funcion_cancelada_no_escanea(cliente_http, db, puerta, usuarios):
     funcion = await db.get(Performance, puerta["pid"])
     funcion.estado = EstadoFuncion.CANCELADA.value
     await db.flush()
-    qr = contenido_del_qr(puerta["boletos"][0].uuid)
+    qr = qr_de(puerta["boletos"][0])
     cuerpo = (await leer(cliente_http, usuarios, puerta["pid"], qr)).json()
     assert (cuerpo["resultado"], cuerpo["motivo"]) == (
         "fuera_de_horario",
@@ -501,7 +553,7 @@ async def test_deshacer_regresa_el_boleto_y_deja_constancia(
     cliente_http, db, puerta, usuarios
 ):
     b = puerta["boletos"][0]
-    qr = contenido_del_qr(b.uuid)
+    qr = qr_de(b)
     await leer(cliente_http, usuarios, puerta["pid"], qr)
 
     r = await deshacer(cliente_http, usuarios, puerta["pid"], b.codigo.lower())
@@ -536,7 +588,7 @@ async def test_deshacer_lo_que_no_entro_avisa(cliente_http, puerta, usuarios):
 
 async def test_deshacer_solo_psd_y_el_organizador(cliente_http, db, puerta, usuarios):
     b = puerta["boletos"][0]
-    await leer(cliente_http, usuarios, puerta["pid"], contenido_del_qr(b.uuid))
+    await leer(cliente_http, usuarios, puerta["pid"], qr_de(b))
     # La puerta no: podría dejar entrar dos veces el mismo boleto.
     r = await deshacer(cliente_http, usuarios, puerta["pid"], b.codigo, quien="acceso")
     assert r.status_code == 403
@@ -587,9 +639,7 @@ async def test_dos_a_la_vez_deshacen_una_vez(motor_con_commit):
         await s.commit()
         boleto = (await boletos_de(s, emitida.orden.uuid))[0]
         funcion = await s.get(Performance, esc_["performance_id"])
-        await EscanerService(s).escanear(
-            funcion, contenido_del_qr(boleto.uuid), uuid.uuid4().hex, org
-        )
+        await EscanerService(s).escanear(funcion, qr_de(boleto), uuid.uuid4().hex, org)
         await s.commit()
     pid = esc_["performance_id"]
 
@@ -654,7 +704,7 @@ async def test_la_lista_de_cortesias_dice_codigo_y_si_ya_entro(
     cliente_http, puerta, usuarios
 ):
     b = puerta["boletos"][0]
-    await leer(cliente_http, usuarios, puerta["pid"], contenido_del_qr(b.uuid))
+    await leer(cliente_http, usuarios, puerta["pid"], qr_de(b))
     lista = (
         await cliente_http.get(
             f"{API}/performances/{puerta['pid']}/cortesias",

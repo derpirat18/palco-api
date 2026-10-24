@@ -10,11 +10,15 @@ from app.core.textos import Linea
 
 
 class RenglonDeAccesoResponse(BaseModel):
-    """Sin correo ni telefono: esto se imprime y se queda en la puerta."""
+    """Sin correo ni telefono: esto se imprime y se queda en la puerta.
+
+    El codigo del boleto solo lo ven PSD y el organizador (taquilla): con
+    el, tecleado, se entra sin QR. Al personal de acceso le llega nulo.
+    """
 
     zona: str
     asiento: str
-    codigo: str
+    codigo: str | None
     folio: str
     titular: str
     cortesia: bool

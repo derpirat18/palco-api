@@ -1,8 +1,13 @@
 """Escaner en linea de la puerta (E3a).
 
-Cada lectura de un QR (o del codigo impreso, si la camara no lee) dice en
-el momento si la persona entra, y con que datos: zona, asiento y a nombre
-de quien. Pueden escanear muchas personas a la vez, cada una con su
+Cada lectura de un QR dice en el momento si la persona entra, y con que
+datos: zona, asiento y a nombre de quien.
+
+La regla de la puerta (BOL3): solo entra el QR que cambia cada 30 s, desde
+el celular. El personal de acceso no teclea codigos: cualquier problema
+(sin celular, pantalla estrellada, el QR no lee) se resuelve en taquilla,
+donde PSD o el organizador pueden teclear el codigo del boleto; queda
+registrado quien lo hizo. Pueden escanear muchas personas a la vez, cada una con su
 celular, en la misma funcion.
 
 Las dos garantias:
@@ -34,11 +39,11 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ErrorDeDominio, RecursoNoEncontrado
-from app.models.base import EstadoBoleto, EstadoFuncion, EstadoOrden
+from app.models.base import EstadoBoleto, EstadoFuncion, EstadoOrden, RolUsuario
 from app.models.catalog import Performance
 from app.models.sales import Customer, Order, OrderItem, Scan, Ticket
 from app.models.users import User
-from app.services.boletos import QRInvalido, leer_qr
+from app.services.boletos import QRInvalido, leer_cualquier_qr, verificar_rotatorio
 from app.services.lista_de_acceso import EN_LA_LISTA, titular_de
 
 VALIDO = "valido"
@@ -155,8 +160,18 @@ class EscanerService:
                 cierra_en=cierra,
             )
 
-        boleto = await self._buscar(texto)
-        resultado, motivo = await self._decidir(boleto, funcion)
+        boleto, rechazo = await self._buscar(texto, usuario, ahora)
+        codigo_ajeno = None
+        if rechazo:
+            # El boleto existe pero lo que se mostro no deja entrar: un QR
+            # vencido (captura), el QR fijo viejo o un codigo tecleado por
+            # quien no es taquilla. La puerta ve el motivo para orientar.
+            resultado, motivo = INVALIDO, rechazo
+            if boleto is not None and not await self._es_de_la_funcion(boleto, funcion):
+                # De otra funcion: sus datos no se muestran aqui.
+                codigo_ajeno, boleto = boleto.codigo, None
+        else:
+            resultado, motivo = await self._decidir(boleto, funcion)
 
         if resultado == VALIDO:
             # El candado: solo una lectura gana el paso de valido a usado.
@@ -180,7 +195,9 @@ class EscanerService:
                 user_id=usuario.id,
                 # El codigo impreso, no el QR: el QR es la credencial del
                 # boleto y no tiene por que quedar copiado en otra tabla.
-                codigo_leido=boleto.codigo if boleto else texto.strip()[:80],
+                codigo_leido=(
+                    boleto.codigo if boleto else codigo_ajeno or texto.strip()[:80]
+                ),
                 resultado=resultado,
                 escaneado_en=ahora,
                 offline=False,
@@ -200,16 +217,47 @@ class EscanerService:
         await self.db.flush()
         return await self._armar(resultado, ahora, boleto, funcion, motivo)
 
-    async def _buscar(self, texto: str) -> Ticket | None:
+    async def _buscar(
+        self, texto: str, usuario: User, ahora: datetime
+    ) -> tuple[Ticket | None, str | None]:
+        """El boleto que se mostro y, si no deja entrar, por que.
+
+        Motivos: "vencido" (QR de hace mas de un minuto: una captura, o el
+        reloj del celular muy mal), "qr_fijo" (el QR viejo del correo) y
+        "solo_taquilla" (codigo tecleado por el personal de acceso).
+        """
         texto = texto.strip()
         try:
-            boleto_uuid = leer_qr(texto)
+            leido = leer_cualquier_qr(texto)
         except QRInvalido:
             codigo = codigo_impreso(texto)
             if codigo is None:
-                return None
-            return await self.db.scalar(select(Ticket).where(Ticket.codigo == codigo))
-        return await self.db.scalar(select(Ticket).where(Ticket.uuid == boleto_uuid))
+                return None, None
+            boleto = await self.db.scalar(select(Ticket).where(Ticket.codigo == codigo))
+            if boleto is not None and usuario.rol == RolUsuario.ACCESO:
+                return boleto, "solo_taquilla"
+            return boleto, None
+        boleto = await self.db.scalar(
+            select(Ticket).where(Ticket.uuid == leido.boleto_uuid)
+        )
+        if boleto is None:
+            return None, None
+        if leido.es_fijo:
+            return boleto, "qr_fijo"
+        falla = verificar_rotatorio(leido, boleto.semilla, ahora.timestamp())
+        if falla == "falso":
+            # Firma que no cuadra: no se dice de que boleto es.
+            return None, None
+        return boleto, falla
+
+    async def _es_de_la_funcion(self, boleto: Ticket, funcion: Performance) -> bool:
+        return (
+            await self.db.scalar(
+                select(Order.performance_id)
+                .join(OrderItem, OrderItem.order_id == Order.id)
+                .where(OrderItem.id == boleto.order_item_id)
+            )
+        ) == funcion.id
 
     async def _decidir(
         self, boleto: Ticket | None, funcion: Performance

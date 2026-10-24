@@ -1,21 +1,36 @@
-"""El QR del boleto y la vista "Tus boletos" (ADR 0014).
+"""El QR del boleto y la vista "Tus boletos" (ADR 0014, BOL3).
 
 Lo que importa:
 
 - Nadie fabrica un QR valido sin la llave, ni reusa la firma de un
   boleto para otro.
-- Solo un boleto que puede entrar lleva QR.
-- La vista no expone datos personales: el QR y el uuid son opacos.
+- El QR cambia cada 30 s: el de hace mas de un minuto ya no sirve.
+- Solo un boleto que puede entrar lleva llave para su QR.
+- La vista no expone datos personales ni el codigo impreso.
 """
 
+import base64
 import json
+import time
 import uuid
+from datetime import datetime
 
 import pytest
 from sqlalchemy import select, update
 
+from app.core.config import settings
 from app.models.sales import Order, OrderItem, Ticket
-from app.services.boletos import QRInvalido, contenido_del_qr, leer_qr
+from app.services.boletos import (
+    PASO,
+    QRInvalido,
+    contenido_del_qr,
+    leer_cualquier_qr,
+    leer_qr,
+    llave_rotatoria,
+    paso_de,
+    qr_rotatorio,
+    verificar_rotatorio,
+)
 from tests.test_checkout import (
     API,
     orden_iniciada,
@@ -25,6 +40,14 @@ from tests.test_checkout import (
 pytestmark = pytest.mark.asyncio
 
 LLAVE = "llave-de-pruebas-para-boletos-0123456789"
+
+
+def qr_de(boleto: Ticket, desfase: int = 0, llave: str | None = None) -> str:
+    """El QR que muestra el celular ahora (o `desfase` pasos antes/despues)."""
+    llave_boleto = llave_rotatoria(
+        boleto.uuid, boleto.semilla, llave or settings.TICKET_SIGNING_KEY
+    )
+    return qr_rotatorio(boleto.uuid, llave_boleto, paso_de(time.time()) + desfase)
 
 
 # --------------------------------------------------------------------------
@@ -95,6 +118,94 @@ async def test_otra_version_o_partes_de_mas():
 
 
 # --------------------------------------------------------------------------
+# El QR que cambia (BOL3)
+# --------------------------------------------------------------------------
+
+SEMILLA = bytes(range(32))
+
+
+def rotatorio(boleto, paso, llave=LLAVE, semilla=SEMILLA) -> str:
+    return qr_rotatorio(boleto, llave_rotatoria(boleto, semilla, llave), paso)
+
+
+async def test_qr_rotatorio_corto_y_legible():
+    boleto, ahora = uuid.uuid4(), time.time()
+    qr = rotatorio(boleto, paso_de(ahora))
+
+    assert qr.startswith("PAL2.")
+    assert len(qr) <= 52, "corto para que el escaner lo lea a la primera"
+    leido = leer_cualquier_qr(f" {qr}\n", LLAVE)
+    assert leido.boleto_uuid == boleto and not leido.es_fijo
+    assert verificar_rotatorio(leido, SEMILLA, ahora, LLAVE) is None
+
+
+async def test_cambia_cada_30_segundos():
+    boleto, ahora = uuid.uuid4(), time.time()
+    assert PASO == 30
+    assert rotatorio(boleto, paso_de(ahora)) != rotatorio(boleto, paso_de(ahora) + 1)
+
+
+@pytest.mark.parametrize(
+    ("desfase", "esperado"),
+    [
+        (0, None),
+        (-1, None),
+        (1, None),
+        (-2, "vencido"),
+        (2, "vencido"),
+        (-120, "vencido"),
+    ],
+)
+async def test_solo_sirve_cerca_de_ahora(desfase, esperado):
+    """Una captura deja de servir al minuto; un reloj un poco desfasado si pasa."""
+    boleto, ahora = uuid.uuid4(), time.time()
+    leido = leer_cualquier_qr(rotatorio(boleto, paso_de(ahora) + desfase), LLAVE)
+    assert verificar_rotatorio(leido, SEMILLA, ahora, LLAVE) == esperado
+
+
+async def test_rotatorio_falso_no_pasa():
+    boleto, ahora = uuid.uuid4(), time.time()
+    paso = paso_de(ahora)
+    viejo, actual = (
+        rotatorio(boleto, paso - 5).split("."),
+        rotatorio(boleto, paso).split("."),
+    )
+    casos = [
+        rotatorio(boleto, paso, semilla=bytes(32)),  # otra semilla
+        rotatorio(boleto, paso, llave="otra-llave-que-no-es-la-de-palco-0000"),
+        # Una captura vieja con el paso de ahora: la firma no cuadra.
+        ".".join([*viejo[:2], actual[2], viejo[3]]),
+    ]
+    for qr in casos:
+        leido = leer_cualquier_qr(qr, LLAVE)
+        assert verificar_rotatorio(leido, SEMILLA, ahora, LLAVE) == "falso", qr
+
+
+async def test_la_llave_de_un_boleto_no_sirve_para_otro():
+    a, b, ahora = uuid.uuid4(), uuid.uuid4(), time.time()
+    llave_a = llave_rotatoria(a, SEMILLA, LLAVE)
+    qr = qr_rotatorio(b, llave_a, paso_de(ahora))
+    assert (
+        verificar_rotatorio(leer_cualquier_qr(qr, LLAVE), SEMILLA, ahora, LLAVE)
+        == "falso"
+    )
+
+
+async def test_el_qr_fijo_se_reconoce_como_viejo():
+    boleto = uuid.uuid4()
+    leido = leer_cualquier_qr(contenido_del_qr(boleto, LLAVE), LLAVE)
+    assert leido.es_fijo and leido.boleto_uuid == boleto
+
+
+@pytest.mark.parametrize(
+    "texto", ["PAL2.x.y.z", "PAL2...", "PAL2.@@.1.##", "PAL2.AAAA.zzzzzzzzzzzzzz.AAAA"]
+)
+async def test_rotatorio_mal_formado(texto):
+    with pytest.raises(QRInvalido):
+        leer_cualquier_qr(texto, LLAVE)
+
+
+# --------------------------------------------------------------------------
 # "Tus boletos"
 # --------------------------------------------------------------------------
 
@@ -135,7 +246,15 @@ async def test_orden_pagada_trae_un_qr_por_lugar(
     cuerpo = r.json()
     assert cuerpo["folio"] == orden.folio
     assert cuerpo["estado"] == "pagada"
-    assert set(cuerpo) == {"folio", "estado", "evento", "funcion", "recinto", "boletos"}
+    assert set(cuerpo) == {
+        "folio", "estado", "evento", "funcion", "recinto", "boletos",
+        "servidor_ahora", "paso_segundos",
+    }  # fmt: skip
+    assert cuerpo["paso_segundos"] == 30
+    assert (
+        abs(datetime.fromisoformat(cuerpo["servidor_ahora"]).timestamp() - time.time())
+        < 60
+    )
     assert cuerpo["evento"]["nombre"]
     assert cuerpo["recinto"]["zona_horaria"] == "America/Mexico_City"
 
@@ -143,11 +262,17 @@ async def test_orden_pagada_trae_un_qr_por_lugar(
     assert len(cuerpo["boletos"]) == len(en_base) == 2
     for visto, real in zip(cuerpo["boletos"], en_base, strict=True):
         assert visto["uuid"] == str(real.uuid)
-        assert visto["codigo"] == real.codigo
         assert visto["estado"] == "valido"
         assert visto["zona"] and visto["asiento"]
-        # El QR que ve el comprador es el que la puerta va a aceptar.
-        assert leer_qr(visto["qr"]) == real.uuid
+        assert visto["entro_en"] is None
+        # Con la llave que recibe, el celular genera el QR que la puerta acepta.
+        llave = base64.urlsafe_b64decode(visto["llave_qr"] + "=")
+        qr = qr_rotatorio(real.uuid, llave, paso_de(time.time()))
+        assert (
+            verificar_rotatorio(leer_cualquier_qr(qr), real.semilla, time.time())
+            is None
+        )
+        assert real.codigo not in json.dumps(visto), "el codigo impreso no sale"
 
     texto = json.dumps(cuerpo)
     assert "ana@correo.mx" not in texto
@@ -193,7 +318,7 @@ async def test_boleto_cancelado_o_usado_no_lleva_qr(
 
     boletos = r.json()["boletos"]
     assert [b["estado"] for b in boletos] == ["cancelado", "usado", "valido"]
-    assert [b["qr"] is None for b in boletos] == [True, True, False]
+    assert [b["llave_qr"] is None for b in boletos] == [True, True, False]
 
 
 async def test_orden_reembolsada_no_deja_entrar_a_nadie(
@@ -212,7 +337,7 @@ async def test_orden_reembolsada_no_deja_entrar_a_nadie(
     r = await cliente_http.get(f"{API}/ordenes/{orden.uuid}/boletos")
 
     assert r.json()["estado"] == "reembolsada"
-    assert all(b["qr"] is None for b in r.json()["boletos"])
+    assert all(b["llave_qr"] is None for b in r.json()["boletos"])
 
 
 async def test_orden_inexistente(cliente_http):

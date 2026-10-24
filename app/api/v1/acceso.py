@@ -122,7 +122,13 @@ async def lista_de_acceso(
     para imprimir o descargar como respaldo del escaner."""
     funcion, evento = await _funcion_de_la_puerta(performance_id, db, usuario)
     lista = await ListaDeAccesoService(db).de_funcion(funcion, evento)
-    return ListaDeAccesoResponse.model_validate(lista)
+    respuesta = ListaDeAccesoResponse.model_validate(lista)
+    if usuario.rol == RolUsuario.ACCESO:
+        # La puerta no teclea codigos (BOL3): una hoja con codigos que se
+        # queda en una mesa es una forma de entrar sin QR.
+        for renglon in respuesta.boletos:
+            renglon.codigo = None
+    return respuesta
 
 
 @router.post(

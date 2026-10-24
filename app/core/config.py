@@ -116,6 +116,22 @@ class Settings(BaseSettings):
     CORREO_SMTP_PASSWORD: str = ""
     CORREO_SMTP_STARTTLS: bool = False
     CORREO_REMITENTE: str = "Palco <boletos@palco.local>"
+    # Lo que sale en el correo de confirmacion (plantilla de Nadia). Lo que
+    # quede vacio no se muestra: mejor sin renglon que con "[Razon social]".
+    MARCA: str = "PSD Boletera"
+    SOPORTE_EMAIL: str = ""
+    EMPRESA_RAZON_SOCIAL: str = ""
+    EMPRESA_DOMICILIO: str = ""
+    # Las mismas del pie del sitio (palco-web, src/lib/enlaces.ts). En el
+    # .env: REDES_SOCIALES='[{"nombre":"Instagram","icono":"instagram",
+    # "url":"https://..."}]'. Iconos: instagram, facebook, tiktok, x, youtube.
+    REDES_SOCIALES: list[dict[str, str]] = [
+        {"nombre": "Instagram", "icono": "instagram", "url": "https://www.instagram.com/"},
+        {"nombre": "Facebook", "icono": "facebook", "url": "https://www.facebook.com/"},
+        {"nombre": "TikTok", "icono": "tiktok", "url": "https://www.tiktok.com/"},
+        {"nombre": "X", "icono": "x", "url": "https://x.com/"},
+        {"nombre": "YouTube", "icono": "youtube", "url": "https://www.youtube.com/"},
+    ]  # fmt: skip
 
     @field_validator("SECRET_KEY", "TICKET_SIGNING_KEY")
     @classmethod

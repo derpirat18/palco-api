@@ -24,6 +24,28 @@ un organizador sin su dinero.
 Si un cambio pone en riesgo cualquiera de las tres, no se hace. Se
 reporta y se pregunta.
 
+## Regla fija: al usuario se le mantiene bien informado
+
+Quien compra, quien escanea y quien administra siempre sabe qué pasa, por
+qué y qué hacer. Antes de pagar, al comprar, en el correo, en la puerta y
+cuando algo falla. Nunca un error sin explicación ni un paso sin avisar.
+
+- Antes de pagar se dice lo que importa para entrar (ej. "Para entrar
+  necesitas tu celular").
+- Si algo cambia lo que la persona ya tiene (un QR que deja de servir, un
+  correo con otro contenido), se cambia también lo que ve y lo que se le
+  manda.
+- Cada rechazo dice el motivo y el siguiente paso ("QR vencido: que abra
+  de nuevo sus boletos"; "a taquilla con tu folio").
+
+## La regla de la puerta (BOL3)
+
+En la puerta solo entra el QR que cambia cada 30 s, desde el celular
+(`app/services/boletos.py`). El personal de acceso no teclea códigos ni ve
+los códigos en su lista. Cualquier problema (sin celular, pantalla rota,
+no lee) va a taquilla: PSD o el organizador pueden teclear el código del
+boleto, y queda registrado quién lo hizo.
+
 ## Stack
 
 - Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, Pydantic v2

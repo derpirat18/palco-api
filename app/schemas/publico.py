@@ -154,3 +154,8 @@ class ConfiguracionPublicaResponse(BaseModel):
     """Lo que el front necesita saber del servidor antes de vender."""
 
     verificacion_humana: VerificacionHumanaResponse
+
+
+class CorreoEnElNavegadorResponse(BaseModel):
+    asunto: str
+    html: str

@@ -29,7 +29,7 @@ from app.schemas.checkout import (
     PagoResponse,
     PartidaResponse,
 )
-from app.services.boletos import boletos_de_la_orden
+from app.services.boletos import PASO, boletos_de_la_orden
 from app.services.checkout import (
     Atribucion,
     CheckoutService,
@@ -143,13 +143,16 @@ async def consultar(orden_uuid: UUID, db: DB) -> OrdenResponse:
     dependencies=[limite("consulta")],
 )
 async def boletos(orden_uuid: UUID, db: DB) -> BoletosResponse:
-    """La vista "Tus boletos": el QR de cada lugar, listo para la puerta."""
+    """La vista "Tus boletos": la llave del QR de cada lugar, para que el
+    celular lo genere (tambien sin internet), y si ya entro."""
     vista = await boletos_de_la_orden(db, orden_uuid)
     return BoletosResponse(
         folio=vista.orden.folio,
         estado=vista.orden.estado,
         evento=EventoDelBoletoResponse(
-            nombre=vista.evento.nombre, slug=vista.evento.slug
+            nombre=vista.evento.nombre,
+            slug=vista.evento.slug,
+            imagen_url=vista.evento.imagen_url,
         ),
         funcion=FuncionDelBoletoResponse(
             uuid=vista.funcion.uuid,
@@ -163,6 +166,8 @@ async def boletos(orden_uuid: UUID, db: DB) -> BoletosResponse:
             zona_horaria=vista.recinto.zona_horaria,
         ),
         boletos=[BoletoResponse(**b.__dict__) for b in vista.boletos],
+        servidor_ahora=vista.servidor_ahora,
+        paso_segundos=PASO,
     )
 
 

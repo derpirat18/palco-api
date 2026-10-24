@@ -13,14 +13,17 @@ from redis.exceptions import RedisError
 
 from app.api.deps import DB
 from app.core.config import settings
+from app.core.errors import RecursoNoEncontrado
 from app.core.redis import redis_client
 from app.schemas.publico import (
     CarteleraResponse,
     ConfiguracionPublicaResponse,
+    CorreoEnElNavegadorResponse,
     EventoPublicoResponse,
     MapaPublicoResponse,
 )
 from app.services.cartelera import Busqueda, CarteleraService, clave_de_visitas
+from app.services.confirmacion import armar_confirmacion
 from app.services.limites import limite
 from app.services.publico import PublicoService
 
@@ -178,3 +181,20 @@ async def mapa_de_funcion(
             if b["id"] in mias:
                 b["estado"] = "tuya"
     return cuerpo
+
+
+@router.get(
+    "/ordenes/{orden_uuid}/correo",
+    response_model=CorreoEnElNavegadorResponse,
+    dependencies=[limite("consulta")],
+)
+async def correo_en_el_navegador(orden_uuid: UUID, db: DB) -> dict:
+    """El correo de confirmacion tal como se mando ("Ver en el navegador").
+
+    La llave es el uuid de la orden, como "Tus boletos". El correo no trae
+    QR ni codigos: no da nada que la liga de la compra no de ya.
+    """
+    mensaje = await armar_confirmacion(db, orden_uuid, para_enviar=False)
+    if mensaje is None:
+        raise RecursoNoEncontrado("Este correo ya no está disponible.")
+    return {"asunto": mensaje.asunto, "html": mensaje.html}

@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="es-MX" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>¡Ya tienes tus boletos para {{evento.nombre}}!</title>
+<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;padding:0;width:100%!important;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;background:#f3f3f7}
+  table{border-collapse:collapse;mso-table-lspace:0;mso-table-rspace:0}
+  img{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;display:block}
+  a{color:#554c7a}
+  .f{font-family:'Outfit',Arial,Helvetica,sans-serif}
+  .btn a:hover{background:#463e66!important}
+  @media only screen and (max-width:620px){
+    .wrap{width:100%!important}
+    .px{padding-left:20px!important;padding-right:20px!important}
+    .col{display:block!important;width:100%!important;max-width:100%!important}
+    .col-img{padding:0 0 20px!important;text-align:center!important}
+    .col-img img{margin:0 auto!important}
+    .hero-t{font-size:30px!important;line-height:36px!important}
+    .ev-t{font-size:22px!important;line-height:28px!important}
+    .fill{width:100%!important;height:auto!important}
+  }
+</style>
+</head>
+<body class="f" style="margin:0;padding:0;background:#f3f3f7;">
+  <!-- Texto de vista previa (preheader) -->
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#f3f3f7;">
+    Compra {{folio}} · {{evento.nombre}}, {{funcion.fecha}} · {{funcion.hora}}. Abre tus boletos con el código QR.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f3f7;">
+  <tr><td align="center" style="padding:24px 12px;">
+
+  <table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;">
+
+    <!-- Encabezado -->
+    <tr><td class="px" style="background:#554c7a;padding:24px 40px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td valign="middle"><img src="{{assets_url}}/logo-psd-blanco.png" width="92" height="30" alt="{{marca}}" style="width:92px;height:auto;"></td>
+        <td valign="middle" align="right" class="f" style="font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:12px;"><a href="{{ver_en_navegador_url}}" style="color:#ffffff;text-decoration:underline;">Ver en el navegador</a></td>
+      </tr></table>
+    </td></tr>
+
+    <!-- Título -->
+    <tr><td class="px" align="center" style="background:#554c7a;padding:36px 40px 8px;">
+      <h1 class="f hero-t" style="margin:0;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:40px;line-height:46px;font-weight:600;color:#ffffff;letter-spacing:-.5px;">¡Ya tienes tus boletos!</h1>
+      <p class="f" style="margin:14px 0 0;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:15px;line-height:22px;font-weight:600;color:#ffffff;letter-spacing:.06em;text-transform:uppercase;">Compra # {{folio}}</p>
+    </td></tr>
+
+    <!-- Imagen del evento (empieza sobre la franja de color, como en la referencia) -->
+    {{#if evento.imagen_url}}
+    <tr><td class="px" style="padding:0 40px;background:#ffffff;background-image:linear-gradient(#554c7a 0,#554c7a 50%,#ffffff 50%,#ffffff 100%);">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding-top:20px;">
+        <img class="fill" src="{{evento.imagen_url}}" width="520" alt="Cartel de {{evento.nombre}}" style="width:520px;max-width:100%;height:auto;border-radius:12px;background:#e5e4ec;">
+      </td></tr></table>
+    </td></tr>
+    {{else}}
+    <tr><td style="background:#554c7a;padding:0 0 28px;font-size:0;line-height:0;">&nbsp;</td></tr>
+    {{/if}}
+
+    <!-- Datos del evento -->
+    <tr><td class="px f" style="padding:24px 40px 8px;font-family:'Outfit',Arial,Helvetica,sans-serif;color:#1f1d2b;">
+      {{#if evento.categoria}}<p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#554c7a;">{{evento.categoria}}</p>{{/if}}
+      <h2 class="ev-t" style="margin:0 0 8px;font-size:26px;line-height:32px;font-weight:600;">{{evento.nombre}}</h2>
+      <p style="margin:0;font-size:15px;line-height:22px;">{{funcion.fecha}} · {{funcion.hora}}</p>
+      <p style="margin:0;font-size:15px;line-height:22px;">{{recinto.nombre}}, {{recinto.ciudad}}</p>
+      <p style="margin:4px 0 0;font-size:13px;line-height:20px;color:#6b6980;">{{#if funcion.apertura}}Apertura de puertas: {{funcion.apertura}} · {{/if}}Hora local de {{recinto.ciudad}}</p>
+      <p style="margin:10px 0 0;font-size:14px;line-height:20px;font-weight:600;">{{num_boletos}}× {{#if (eq num_boletos 1)}}boleto digital{{else}}boletos digitales{{/if}}</p>
+    </td></tr>
+
+    <!-- Botón principal -->
+    <tr><td class="px" style="padding:16px 40px 8px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td class="btn" align="center" style="border-radius:10px;background:#554c7a;">
+          <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="{{boletos_url}}" style="height:50px;v-text-anchor:middle;width:520px;" arcsize="20%" stroke="f" fillcolor="#554c7a"><w:anchorlock/><center style="color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;">Ver mis boletos</center></v:roundrect><![endif]-->
+          <!--[if !mso]><!-- --><a href="{{boletos_url}}" class="f" style="display:block;padding:15px 20px;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px;background:#554c7a;">Ver mis boletos</a><!--<![endif]-->
+        </td>
+      </tr></table>
+    </td></tr>
+    <tr><td class="px f" align="center" style="padding:8px 40px 28px;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#6b6980;">
+      <strong style="color:#1f1d2b;">ⓘ Este correo no sirve para entrar al evento.</strong> En el acceso muestra el código QR de cada boleto desde «Ver mis boletos».
+    </td></tr>
+
+    <tr><td class="px" style="padding:0 40px;"><div style="border-top:1px dashed #e5e4ec;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+
+    <!-- Tu teléfono es tu boleto -->
+    <tr><td class="px" style="padding:28px 40px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td class="col col-img" width="190" valign="top" style="width:190px;padding-right:24px;">
+          <img src="{{assets_url}}/boleto-telefono.png" width="170" alt="Ejemplo de boleto con código QR en el teléfono" style="width:170px;height:auto;">
+        </td>
+        <td class="col f" valign="middle" style="font-family:'Outfit',Arial,Helvetica,sans-serif;color:#1f1d2b;">
+          <h2 style="margin:0 0 10px;font-size:24px;line-height:30px;font-weight:600;">Tu teléfono es tu boleto</h2>
+          <p style="margin:0 0 12px;font-size:14px;line-height:21px;color:#1f1d2b;">Para entrar al evento:</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr><td valign="top" style="padding:0 10px 10px 0;font-size:14px;color:#1b8457;font-weight:700;">✓</td><td class="f" style="padding:0 0 10px;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;">Abre «Ver mis boletos» desde este correo{{#unless es_invitado}} o desde Mis boletos en tu cuenta{{/unless}}.</td></tr>
+            <tr><td valign="top" style="padding:0 10px 10px 0;font-size:14px;color:#1b8457;font-weight:700;">✓</td><td class="f" style="padding:0 0 10px;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;">Sube el brillo de tu pantalla y muestra un QR por persona.</td></tr>
+            <tr><td valign="top" style="padding:0 10px 0 0;font-size:14px;color:#1b8457;font-weight:700;">✓</td><td class="f" style="font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;">El QR cambia cada pocos segundos: las capturas de pantalla no sirven para entrar.</td></tr>
+          </table>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <!-- Resumen de tu orden -->
+    <tr><td class="px" style="padding:12px 40px 8px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td class="f" style="font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:20px;line-height:26px;font-weight:600;color:#1f1d2b;">Resumen de tu orden</td>
+        <td class="f" align="right" style="font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:14px;color:#6b6980;white-space:nowrap;">{{num_boletos}}× {{#if (eq num_boletos 1)}}boleto{{else}}boletos{{/if}}</td>
+      </tr></table>
+    </td></tr>
+    {{#each boletos}}
+    <tr><td class="px" style="padding:8px 40px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f3f7;border-top:3px solid #554c7a;border-radius:0 0 10px 10px;">
+        <tr><td colspan="3" class="f" style="padding:14px 16px 10px;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;color:#1f1d2b;border-bottom:1px solid #e5e4ec;">{{tipo}}</td></tr>
+        <tr>
+          <td class="f" width="40%" style="padding:12px 16px;font-family:'Outfit',Arial,Helvetica,sans-serif;"><span style="display:block;font-size:12px;color:#6b6980;">Zona</span><strong style="font-size:15px;color:#1f1d2b;">{{zona}}</strong></td>
+          <td class="f" width="30%" style="padding:12px 16px;font-family:'Outfit',Arial,Helvetica,sans-serif;"><span style="display:block;font-size:12px;color:#6b6980;">Fila</span><strong style="font-size:15px;color:#1f1d2b;">{{fila}}</strong></td>
+          <td class="f" width="30%" style="padding:12px 16px;font-family:'Outfit',Arial,Helvetica,sans-serif;"><span style="display:block;font-size:12px;color:#6b6980;">Lugar</span><strong style="font-size:15px;color:#1f1d2b;">{{lugar}}</strong></td>
+        </tr>
+        {{#if accesible}}<tr><td colspan="3" class="f" style="padding:0 16px 14px;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:12px;color:#6b6980;">Localidad para personas con discapacidad</td></tr>{{/if}}
+      </table>
+    </td></tr>
+    {{/each}}
+
+    {{#if pago}}
+    <!-- Resumen de pago -->
+    <tr><td class="px" style="padding:28px 40px 8px;">
+      <h2 class="f" style="margin:0 0 12px;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:20px;line-height:26px;font-weight:600;color:#1f1d2b;">Resumen de pago</h2>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="f" style="font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#1f1d2b;">
+        {{#each pago.partidas}}
+        <tr>
+          <td style="padding:6px 0;">{{descripcion}}{{#if detalle}}<br><span style="font-size:12px;color:#6b6980;">{{detalle}}</span>{{/if}}</td>
+          <td align="right" valign="top" style="padding:6px 0;white-space:nowrap;">{{importe}}</td>
+        </tr>
+        {{/each}}
+        {{#if pago.descuento}}<tr><td style="padding:6px 0;">Descuento</td><td align="right" style="padding:6px 0;white-space:nowrap;">−{{pago.descuento}}</td></tr>{{/if}}
+        <tr><td colspan="2" style="padding:8px 0 0;"><div style="border-top:1px solid #e5e4ec;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+        <tr><td style="padding:6px 0;color:#6b6980;font-size:13px;">Subtotal</td><td align="right" style="padding:6px 0;color:#6b6980;font-size:13px;white-space:nowrap;">{{pago.subtotal}}</td></tr>
+        <tr><td style="padding:0 0 6px;color:#6b6980;font-size:13px;">IVA incluido ({{pago.iva_pct}}%)</td><td align="right" style="padding:0 0 6px;color:#6b6980;font-size:13px;white-space:nowrap;">{{pago.iva}}</td></tr>
+        <tr><td colspan="2" style="padding:6px 0 0;"><div style="border-top:1px solid #e5e4ec;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+        <tr>
+          <td style="padding:10px 0 4px;font-size:17px;font-weight:700;">Total <span style="font-size:13px;font-weight:400;color:#6b6980;">(precio final, sin cargos)</span></td>
+          <td align="right" style="padding:10px 0 4px;font-size:17px;font-weight:700;white-space:nowrap;">{{pago.total}} {{pago.moneda}}</td>
+        </tr>
+        <tr><td colspan="2" style="padding:0 0 4px;font-size:12px;color:#6b6980;">Pagado{{#if pago.metodo}} con {{pago.metodo}}{{/if}} el {{pago.pagada_en}}.</td></tr>
+      </table>
+    </td></tr>
+    {{else}}
+    <!-- Cortesia: sin resumen de pago -->
+    <tr><td class="px" style="padding:28px 40px 8px;">
+      <h2 class="f" style="margin:0 0 8px;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:20px;line-height:26px;font-weight:600;color:#1f1d2b;">Boletos de cortesía</h2>
+      <p class="f" style="margin:0;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#6b6980;">Te los regalaron: no tienen costo. Entran igual que cualquier boleto, con el QR desde «Ver mis boletos».</p>
+    </td></tr>
+    {{/if}}
+
+    {{#if cuentas}}{{#if es_invitado}}
+    <!-- Solo si compró como invitado (y ya hay cuentas de comprador) -->
+    <tr><td class="px" style="padding:24px 40px 8px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e5e4ec;border-radius:12px;">
+        <tr><td class="f" style="padding:16px 18px;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:14px;line-height:21px;color:#1f1d2b;">
+          <strong>Compraste como invitado con {{comprador.email}}.</strong><br>
+          Crea tu cuenta con este mismo correo y verás estos boletos en Mis boletos, junto con tus próximas compras.
+          <p style="margin:12px 0 0;"><a href="{{crear_cuenta_url}}" style="display:inline-block;padding:10px 18px;border:1px solid #554c7a;border-radius:10px;color:#554c7a;font-weight:600;text-decoration:none;">Crear mi cuenta</a></p>
+        </td></tr>
+      </table>
+    </td></tr>
+    {{/if}}{{/if}}
+
+    <tr><td style="padding:16px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>
+
+    <!-- Pie -->
+    <tr><td class="px f" style="background:#554c7a;padding:28px 40px 32px;font-family:'Outfit',Arial,Helvetica,sans-serif;color:#ffffff;">
+      {{#if redes}}
+      <p style="margin:0 0 14px;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Síguenos</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+        {{#each redes}}<td style="padding-right:12px;"><a href="{{url}}"><img src="{{../assets_url}}/{{icono}}.png" width="36" height="36" alt="{{nombre}}" style="width:36px;height:36px;"></a></td>{{/each}}
+      </tr></table>
+      {{/if}}
+      {{#if soporte_email}}
+      <p style="margin:22px 0 0;font-size:15px;line-height:22px;font-weight:600;">¿Necesitas ayuda con tu compra? <a href="mailto:{{soporte_email}}" style="color:#ffffff;text-decoration:underline;">Escríbenos a {{soporte_email}}</a></p>
+      {{/if}}
+      {{#if redes}}<div style="border-top:1px solid rgba(255,255,255,.3);margin:22px 0 18px;font-size:0;line-height:0;">&nbsp;</div>{{else}}{{#if soporte_email}}<div style="border-top:1px solid rgba(255,255,255,.3);margin:22px 0 18px;font-size:0;line-height:0;">&nbsp;</div>{{/if}}{{/if}}
+      <p style="margin:0 0 16px;font-size:14px;font-weight:600;">
+        <a href="{{enlaces.inicio}}" style="color:#ffffff;text-decoration:none;margin-right:20px;">{{marca}}</a>
+        {{#unless es_invitado}}<a href="{{enlaces.mi_cuenta}}" style="color:#ffffff;text-decoration:none;margin-right:20px;">Mi cuenta</a>{{/unless}}
+        <a href="{{enlaces.devoluciones}}" style="color:#ffffff;text-decoration:none;">Política de devoluciones</a>
+      </p>
+      <p style="margin:0 0 10px;font-size:12px;line-height:18px;">Por favor no respondas a este correo; no podremos darle seguimiento.{{#if soporte_email}} Si tienes alguna pregunta, escríbenos a {{soporte_email}}.{{/if}}</p>
+      <p style="margin:0 0 10px;font-size:12px;line-height:18px;">© {{anio}} {{marca}}. Todos los derechos reservados.</p>
+      {{#if empresa.razon_social}}<p style="margin:0 0 10px;font-size:12px;line-height:18px;">{{empresa.razon_social}}{{#if empresa.domicilio}}, {{empresa.domicilio}}{{/if}}.</p>{{/if}}
+      <p style="margin:0;font-size:12px;line-height:18px;">Tratamos tus datos conforme a nuestro <a href="{{enlaces.aviso_privacidad}}" style="color:#ffffff;text-decoration:underline;">Aviso de privacidad</a> y nuestros <a href="{{enlaces.terminos}}" style="color:#ffffff;text-decoration:underline;">Términos y condiciones</a>.</p>
+    </td></tr>
+
+  </table>
+  </td></tr>
+  </table>
+</body>
+</html>

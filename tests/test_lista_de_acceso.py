@@ -115,3 +115,20 @@ async def test_para_otro_organizador_no_existe(cliente_http, esc, usuarios):  # 
         f"{API}/performances/{esc['performance_id']}/lista-de-acceso"
     )
     assert sin_sesion.status_code == 401
+
+
+async def test_el_personal_de_acceso_no_ve_codigos(cliente_http, esc, usuarios):  # noqa: F811
+    """Con el codigo tecleado se entra sin QR: solo lo ve la taquilla (BOL3)."""
+    from tests.test_escaner import asignar
+
+    pid = esc["performance_id"]
+    assert (
+        await otorgar(cliente_http, usuarios, pid, esc["seat_ids"][:1])
+    ).status_code == 201
+    assert (await asignar(cliente_http, usuarios, [esc["event_id"]])).status_code == 200
+
+    puerta = (await lista(cliente_http, usuarios, pid, quien="acceso")).json()
+    taquilla = (await lista(cliente_http, usuarios, pid, quien="org_a")).json()
+    assert [b["codigo"] for b in puerta["boletos"]] == [None]
+    assert taquilla["boletos"][0]["codigo"]
+    assert puerta["boletos"][0]["folio"] == taquilla["boletos"][0]["folio"]

@@ -65,8 +65,11 @@ async def test_la_puerta_y_el_correo_usan_el_nombre_de_esa_compra(
     por_folio = {x["folio"]: x["titular"] for x in r.json()["boletos"]}
     assert por_folio == {a.json()["folio"]: "Reportera", b.json()["folio"]: "Fotógrafo"}
 
+    # El correo (diseno de Nadia, BOL1) ya no saluda por nombre; el que
+    # cuenta es el de la lista de la puerta, arriba.
     correo = await armar_confirmacion(db, UUID(b.json()["uuid"]), cortesia=True)
-    assert "Hola, Fotógrafo" in correo.texto
+    assert correo is not None
+    assert "Reportera" not in correo.texto, "nunca el nombre de otra compra"
 
 
 async def test_orden_anterior_sin_nombre_usa_el_del_comprador(
