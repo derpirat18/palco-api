@@ -51,6 +51,18 @@ FUNCION_NO_EXISTE = "No encontramos esta función."
 CUENTA_NO_EXISTE = "No encontramos esa cuenta."
 
 
+class EventoMovido(ErrorDeDominio):
+    """La direccion fue de un evento que ahora tiene otra (URL1).
+
+    No es un "no existe": el detalle trae la direccion nueva y la pagina
+    publica redirige. Solo se responde si el evento es visible; si no, la
+    direccion vieja contesta igual que una inexistente.
+    """
+
+    codigo = "evento_movido"
+    http_status = 404
+
+
 class FuncionNoALaVenta(ErrorDeDominio):
     """La funcion existe y es publica, pero hoy no se le puede comprar."""
 

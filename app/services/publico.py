@@ -17,10 +17,16 @@ from uuid import UUID
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import EVENTO_NO_EXISTE, FUNCION_NO_EXISTE, RecursoNoEncontrado
+from app.core.errors import (
+    EVENTO_NO_EXISTE,
+    FUNCION_NO_EXISTE,
+    EventoMovido,
+    RecursoNoEncontrado,
+)
 from app.models.base import EstadoAsiento, EstadoFuncion
 from app.models.catalog import (
     Client,
+    DireccionAnterior,
     Event,
     Performance,
     PerformancePrice,
@@ -135,6 +141,25 @@ class PublicoService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def _direccion_anterior(self, slug: str) -> None:
+        """Si la direccion fue de un evento visible, avisa a donde se movio.
+
+        Un evento oculto (borrador, organizador de baja) responde igual que
+        uno inexistente, tambien por su direccion vieja.
+        """
+        fila = (
+            await self.db.execute(
+                select(Event, Client)
+                .join(DireccionAnterior, DireccionAnterior.event_id == Event.id)
+                .join(Client, Client.id == Event.client_id)
+                .where(DireccionAnterior.slug == slug.strip().lower())
+            )
+        ).first()
+        if fila is not None and visible_al_publico(fila[0], fila[1]):
+            raise EventoMovido(
+                "Este evento cambió de dirección.", {"slug": fila[0].slug}
+            )
+
     async def evento_por_slug(self, slug: str) -> EventoPublico:
         fila = (
             await self.db.execute(
@@ -144,6 +169,8 @@ class PublicoService:
                 .where(Event.slug == slug.strip().lower())
             )
         ).first()
+        if fila is None:
+            await self._direccion_anterior(slug)
         if fila is None or not visible_al_publico(fila[0], fila[1]):
             raise RecursoNoEncontrado(EVENTO_NO_EXISTE)
         evento, cliente, recinto = fila

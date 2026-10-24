@@ -81,6 +81,17 @@ def validar_nombre_de_persona(valor: str | None) -> str | None:
     return valor
 
 
+def validar_inicio_alfanumerico(valor: str | None) -> str | None:
+    """Empieza con letra o numero: un texto que empieza con = + - @ se ejecuta
+    como formula al abrirlo en Excel. Para textos que no son un nombre de
+    persona (el motivo de una cortesia), donde los numeros si caben."""
+    if not valor:
+        return valor
+    if not valor[0].isalnum():
+        raise ValueError("Empieza con una letra o un número.")
+    return valor
+
+
 def validar_url_https(valor: str | None) -> str | None:
     """Solo https://: nada de javascript:, data: ni direcciones sin cifrar."""
     if not valor:
@@ -102,6 +113,10 @@ def validar_color(valor: str | None) -> str | None:
 
 # Texto de una linea: nombres de evento, recinto, zona, motivo...
 Linea = Annotated[str, BeforeValidator(limpiar_linea)]
+# Una linea que empieza con letra o numero: el motivo de una cortesia.
+LineaSegura = Annotated[
+    str, BeforeValidator(limpiar_linea), AfterValidator(validar_inicio_alfanumerico)
+]
 # Texto largo con saltos de linea: la descripcion del evento.
 Parrafo = Annotated[str, BeforeValidator(limpiar_parrafo)]
 # El nombre de una persona: lo que sale en la puerta y en el correo.

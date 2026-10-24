@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.core.textos import Linea, NombreDePersona
+from app.core.textos import Linea, LineaSegura, NombreDePersona
 
 
 class CortesiaRequest(BaseModel):
@@ -16,8 +16,9 @@ class CortesiaRequest(BaseModel):
     email: EmailStr
     # Sale en la lista de la puerta como titular.
     nombre: NombreDePersona = Field(min_length=1, max_length=120)
-    # Prensa, patrocinador, familia del elenco...: queda en la bitacora.
-    motivo: Linea = Field(min_length=1, max_length=120)
+    # Prensa, patrocinador, familia del elenco...: queda en la bitacora. Empieza
+    # con letra o numero (OB5): asi nunca es una formula en un Excel.
+    motivo: LineaSegura = Field(min_length=1, max_length=120)
     # Opcional. Se normaliza a E.164 en el servicio (normalizar_telefono).
     telefono: Linea | None = Field(default=None, max_length=30)
 

@@ -57,6 +57,15 @@ class RenglonDeVenta:
     # El codigo impreso del boleto: con el se deshace una entrada (E3d).
     codigo: str | None = None
 
+    @property
+    def precio_sin_iva(self) -> Decimal:
+        """Lo que cuadra en el Excel: precio sin IVA - descuento + IVA = total (OB4).
+
+        `precio` es el precio al publico (con IVA) y el IVA esta contenido en el
+        importe; sin restarlo, Precio + IVA no da el Total.
+        """
+        return self.precio - self.iva
+
 
 @dataclass(frozen=True)
 class ResumenDeVentas:
@@ -218,7 +227,7 @@ COLUMNAS = (
     ("Zona", 16),
     ("Asiento", 16),
     ("A nombre de", 28),
-    ("Precio", 11),
+    ("Precio sin IVA", 14),
     ("Descuento", 11),
     ("IVA", 10),
     ("Total", 11),
@@ -231,7 +240,7 @@ COLUMNAS = (
     ("Código", 14),
 )
 _FECHAS = ("Fecha de compra", "Entró", "Función")
-_DINERO = ("Precio", "Descuento", "IVA", "Total")
+_DINERO = ("Precio sin IVA", "Descuento", "IVA", "Total")
 
 
 def _texto(hoja, valor: str | None) -> WriteOnlyCell:
@@ -277,7 +286,7 @@ def _libro(partes: list[tuple[datetime | None, ListadoDeVentas]]) -> bytes:
                 "Zona": _texto(hoja, v.zona),
                 "Asiento": _texto(hoja, v.asiento),
                 "A nombre de": _texto(hoja, v.titular),
-                "Precio": WriteOnlyCell(hoja, value=v.precio),
+                "Precio sin IVA": WriteOnlyCell(hoja, value=v.precio_sin_iva),
                 "Descuento": WriteOnlyCell(hoja, value=v.descuento),
                 "IVA": WriteOnlyCell(hoja, value=v.iva),
                 "Total": WriteOnlyCell(hoja, value=v.total),

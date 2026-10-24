@@ -139,3 +139,55 @@ async def test_el_correo_de_los_boletos_va_al_de_la_compra(
 
     assert mensaje is not None
     assert mensaje.para == "otro@correo.mx"
+
+
+async def test_el_motivo_no_puede_empezar_como_formula(
+    cliente_http,
+    esc,  # noqa: F811
+    usuarios,
+):
+    pid, seats = esc["performance_id"], esc["seat_ids"]
+    for motivo in ("=HIPERVINCULO()", "+52", "-x", "@algo", "  =con espacios"):
+        r = await otorgar(cliente_http, usuarios, pid, [seats[0]], motivo=motivo)
+        assert r.status_code == 422, motivo
+        campos = {
+            c["campo"]: c["mensaje"] for c in r.json()["error"]["detalle"]["campos"]
+        }
+        assert campos["motivo"] == "Empieza con una letra o un número.", campos
+    r = await otorgar(cliente_http, usuarios, pid, [seats[0]], motivo="2 x 1 prensa")
+    assert r.status_code == 201, r.text
+
+
+async def test_el_excel_trae_precio_sin_iva_que_cuadra(
+    cliente_http,
+    db,
+    clientes,
+    usuarios,
+    hold_service,
+    stripe_falso,  # noqa: F811
+):
+    import io
+    from decimal import Decimal
+
+    from openpyxl import load_workbook
+
+    esc_, _, servicio, iniciada = await orden_iniciada(
+        db, hold_service, stripe_falso, clientes[0].id
+    )
+    await pagar(servicio, stripe_falso, iniciada)
+    r = await cliente_http.get(
+        f"{API}/performances/{esc_['performance_id']}/ventas.xlsx",
+        headers=de(usuarios, "org_a"),
+    )
+    hoja = load_workbook(io.BytesIO(r.content)).active
+    titulos = [c.value for c in hoja[1]]
+    precio, descuento, iva, total = (
+        titulos.index(t) + 1 for t in ("Precio sin IVA", "Descuento", "IVA", "Total")
+    )
+    for fila in range(2, hoja.max_row + 1):
+        p, d, i, t = (
+            Decimal(str(hoja.cell(fila, c).value))
+            for c in (precio, descuento, iva, total)
+        )
+        assert p - d + i == t
+        assert p < t

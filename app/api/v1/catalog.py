@@ -385,7 +385,29 @@ async def actualizar_evento(
 
     await servicio.verificar_cambio_de_iva(evento, cambios)
 
-    if "nombre" in cambios and cambios["nombre"] != evento.nombre:
+    # La direccion (URL1). Publicado, sus ligas ya circulan en anuncios y
+    # mensajes: cambiarla la decide PSD, y la vieja sigue llevando al evento.
+    direccion = cambios.pop("slug", None)
+    if direccion is not None and slugify(direccion) != evento.slug:
+        if (
+            usuario.rol != RolUsuario.ADMIN_PSD
+            and evento.estado != EstadoEvento.BORRADOR.value
+        ):
+            raise PermisoInsuficiente(
+                "El evento ya está publicado y su dirección ya circula. "
+                "Si necesitas cambiarla, pídeselo a PSD.",
+                {"campos": ["slug"]},
+            )
+        await servicio.cambiar_direccion(evento, direccion, usuario.id)
+    elif (
+        direccion is None
+        and "nombre" in cambios
+        and cambios["nombre"] != evento.nombre
+        and evento.estado == EstadoEvento.BORRADOR.value
+        and servicio.es_slug_automatico(evento.slug, evento.nombre)
+    ):
+        # Mientras es borrador y nadie eligio la direccion, sigue al nombre.
+        # Ya publicado, nunca: romperia las ligas que se compartieron.
         evento.slug = await servicio.slug_disponible(
             slugify(cambios["nombre"]), event_id=evento.id
         )

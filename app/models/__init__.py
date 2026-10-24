@@ -8,6 +8,7 @@ from app.models.acceso import AsignacionDeAcceso, ConsultaDeDatos
 from app.models.base import Base
 from app.models.catalog import (
     Client,
+    DireccionAnterior,
     Event,
     Performance,
     PerformancePrice,
@@ -47,6 +48,7 @@ __all__ = [
     "ConsultaDeDatos",
     "Cortesia",
     "Customer",
+    "DireccionAnterior",
     "DiscountCode",
     "DiscountRedemption",
     "Event",

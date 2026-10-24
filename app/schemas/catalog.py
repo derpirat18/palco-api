@@ -174,6 +174,9 @@ class EventoActualizar(BaseModel):
     estado: str | None = None
     iva_pct: TasaIva | None = None
     precios_incluyen_iva: bool | None = None
+    # La direccion de la pagina (psdevents.com/<slug>). Se normaliza en el
+    # servidor; el organizador solo la cambia mientras es borrador (URL1).
+    slug: Linea | None = Field(default=None, max_length=160)
 
 
 class EventoResponse(BaseModel):

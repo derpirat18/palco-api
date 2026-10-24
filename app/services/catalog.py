@@ -11,7 +11,7 @@ import re
 import unicodedata
 from decimal import Decimal
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
@@ -20,7 +20,9 @@ from app.core.errors import (
     ErrorDeDominio,
     RecursoNoEncontrado,
 )
+from app.models.base import EstadoEvento
 from app.models.catalog import (
+    DireccionAnterior,
     Event,
     Performance,
     PerformancePrice,
@@ -37,13 +39,38 @@ class ConflictoDeCatalogo(ErrorDeDominio):
     http_status = 409
 
 
-def slugify(texto: str) -> str:
-    """Slug a partir del nombre del evento, para la URL publica."""
+class DireccionNoValida(ErrorDeDominio):
+    """La direccion personalizada no se puede usar (URL1)."""
+
+    codigo = "direccion_no_valida"
+    http_status = 409
+
+
+# Las primeras partes de la direccion que ya usa (o usara) el sitio: un
+# evento llamado "panel" se comeria la entrada al panel.
+DIRECCIONES_RESERVADAS = frozenset(
+    {
+        "admin", "api", "assets", "ayuda", "boletos", "cartelera", "contacto",
+        "crear-cuenta", "cuenta", "entrar", "evento", "eventos", "img",
+        "legal", "mis-boletos", "orden", "ordenes", "panel", "perfil",
+        "pruebas", "salir", "soporte", "static", "www",
+    }
+)  # fmt: skip
+DIRECCION_MIN = 3
+DIRECCION_MAX = 80
+
+
+def _slug(texto: str) -> str:
     sin_acentos = (
         unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
     )
     s = re.sub(r"[^a-zA-Z0-9]+", "-", sin_acentos).strip("-").lower()
-    return re.sub(r"-{2,}", "-", s)[:160] or "evento"
+    return re.sub(r"-{2,}", "-", s)[:160]
+
+
+def slugify(texto: str) -> str:
+    """Slug a partir del nombre del evento, para la URL publica."""
+    return _slug(texto) or "evento"
 
 
 class CatalogService:
@@ -174,22 +201,83 @@ class CatalogService:
 
     # --------------------------------------------------------------- eventos
 
+    async def slug_ocupado(self, slug: str, event_id: int | None = None) -> bool:
+        """Si la direccion es de otro evento, hoy o antes.
+
+        Una direccion vieja sigue llevando a su evento (URL1): si otro la
+        tomara, las ligas que ya circulan llevarian a un evento ajeno.
+        """
+        actual = select(Event.id).where(Event.slug == slug)
+        anterior = select(DireccionAnterior.id).where(DireccionAnterior.slug == slug)
+        if event_id is not None:
+            actual = actual.where(Event.id != event_id)
+            anterior = anterior.where(DireccionAnterior.event_id != event_id)
+        return bool(await self.db.scalar(select(exists(actual) | exists(anterior))))
+
     async def slug_disponible(self, base: str, event_id: int | None = None) -> str:
         """Agrega sufijo numerico si el slug ya existe.
 
         Dos plazas del mismo espectaculo generan el mismo slug, y la URL
-        publica tiene que ser unica.
+        publica tiene que ser unica. Tampoco toma una reservada del sitio.
         """
         slug = base
         n = 1
-        while True:
-            consulta = select(Event).where(Event.slug == slug)
-            if event_id is not None:
-                consulta = consulta.where(Event.id != event_id)
-            if await self.db.scalar(consulta) is None:
-                return slug
+        while slug in DIRECCIONES_RESERVADAS or await self.slug_ocupado(slug, event_id):
             n += 1
             slug = f"{base}-{n}"
+        return slug
+
+    @staticmethod
+    def es_slug_automatico(slug: str, nombre: str) -> bool:
+        """Si la direccion es la que Palco saco del nombre (con o sin -2, -3).
+
+        Asi un cambio de nombre en borrador la actualiza, pero no pisa una
+        que el organizador eligio a mano.
+        """
+        base = slugify(nombre)
+        return slug == base or bool(re.fullmatch(re.escape(base) + r"-\d+", slug))
+
+    async def cambiar_direccion(
+        self, evento: Event, texto: str, usuario_id: int | None
+    ) -> None:
+        """Pone la direccion personalizada del evento (URL1).
+
+        Se normaliza como las automaticas ("Atayde Coatzacoalcos 2026" ->
+        atayde-coatzacoalcos-2026). Si el evento ya salio al publico, la
+        direccion anterior se guarda para que sus ligas sigan funcionando;
+        un borrador no tiene ligas circulando y no aparta direcciones.
+        """
+        nuevo = _slug(texto)
+        if not DIRECCION_MIN <= len(nuevo) <= DIRECCION_MAX:
+            raise DireccionNoValida(
+                f"La dirección lleva de {DIRECCION_MIN} a {DIRECCION_MAX} "
+                "letras, números o guiones.",
+                {"campo": "slug"},
+            )
+        if nuevo == evento.slug:
+            return
+        if nuevo in DIRECCIONES_RESERVADAS:
+            raise DireccionNoValida(
+                "Esa dirección la usa el sitio. Elige otra.", {"campo": "slug"}
+            )
+        if await self.slug_ocupado(nuevo, evento.id):
+            raise DireccionNoValida(
+                "Esa dirección ya la usa otro evento. Elige otra.", {"campo": "slug"}
+            )
+        # Volver a una direccion que el evento ya tuvo: deja de ser "anterior".
+        await self.db.execute(
+            delete(DireccionAnterior).where(
+                DireccionAnterior.event_id == evento.id,
+                DireccionAnterior.slug == nuevo,
+            )
+        )
+        if evento.estado != EstadoEvento.BORRADOR.value:
+            self.db.add(
+                DireccionAnterior(
+                    event_id=evento.id, slug=evento.slug, cambiado_por=usuario_id
+                )
+            )
+        evento.slug = nuevo
 
     async def obtener_evento(self, event_id: int) -> Event:
         evento = await self.db.get(Event, event_id)

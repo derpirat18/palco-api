@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
     true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -201,6 +202,31 @@ class Event(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
         CheckConstraint("iva_pct >= 0 AND iva_pct <= 100", name="iva_rango"),
         Index("ix_events_estado_destacado", "estado", "destacado"),
     )
+
+
+class DireccionAnterior(Base, PKMixin):
+    """Una direccion que tuvo un evento y ya no tiene (URL1).
+
+    Las ligas a un evento circulan en anuncios, mensajes y carteles. Si su
+    direccion cambia, la vieja sigue llevando al evento: la pagina publica
+    la busca aqui y redirige. Ningun otro evento puede tomar una direccion
+    que esta en esta tabla, o se llevaria las visitas ajenas.
+    """
+
+    __tablename__ = "event_slug_history"
+
+    event_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("events.id", ondelete="CASCADE"), nullable=False
+    )
+    slug: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    cambiado_por: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    cambiado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_event_slug_history_event", "event_id"),)
 
 
 class Performance(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
