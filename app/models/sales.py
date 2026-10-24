@@ -183,6 +183,13 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     # Nulo en ordenes de antes de existir la columna.
     nombre_snap: Mapped[str | None] = mapped_column(String(120))
     apellidos_snap: Mapped[str | None] = mapped_column(String(120))
+    # El contacto de esta compra, tal como se escribio (OB1). El registro del
+    # comprador es uno por correo para toda la plataforma: su telefono es el
+    # de su primera compra, quiza con otro organizador. Ventas, el Excel y el
+    # correo de los boletos usan estos, nunca los del registro. En una
+    # cortesia el telefono es opcional.
+    email_snap: Mapped[str | None] = mapped_column(String(255))
+    telefono_snap: Mapped[str | None] = mapped_column(String(16))
 
     comprador: Mapped["Customer"] = relationship(back_populates="ordenes")
     partidas: Mapped[list["OrderItem"]] = relationship(back_populates="orden")
@@ -195,6 +202,10 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
         CheckConstraint("total >= 0", name="total_no_negativo"),
         CheckConstraint("total = subtotal + iva - descuento", name="total_cuadra"),
         CheckConstraint("iva >= 0 AND iva <= total", name="iva_valido"),
+        CheckConstraint(
+            r"telefono_snap IS NULL OR telefono_snap ~ '^\+[1-9][0-9]{7,14}$'",
+            name="telefono_snap_e164",
+        ),
         Index("ix_orders_performance_estado", "performance_id", "estado"),
         Index("ix_orders_customer", "customer_id"),
         # Un apartado, a lo mas una orden esperando pago. Dos ordenes vivas

@@ -317,6 +317,9 @@ class CheckoutService:
             canal=a.canal,
             nombre_snap=comprador.nombre.strip()[:120] or None,
             apellidos_snap=(comprador.apellidos or "").strip()[:120] or None,
+            # El contacto de esta compra: el registro del comprador no cambia.
+            email_snap=email,
+            telefono_snap=telefono,
         )
         try:
             async with self.db.begin_nested():

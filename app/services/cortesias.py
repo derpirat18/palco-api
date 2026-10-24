@@ -29,6 +29,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import FUNCION_NO_EXISTE, ErrorDeDominio, RecursoNoEncontrado
+from app.core.telefonos import normalizar_telefono
 from app.models.base import EstadoAsiento, EstadoBoleto, EstadoFuncion, EstadoOrden
 from app.models.catalog import Event, Performance, Seat, Zone
 from app.models.inventory import InventoryMove, PerformanceSeat
@@ -81,7 +82,10 @@ class CortesiaService:
         nombre: str,
         motivo: str,
         actor_id: int | None,
+        telefono: str | None = None,
     ) -> CortesiaEmitida:
+        # Un telefono mal escrito se rechaza antes de tocar ningun lugar.
+        telefono = normalizar_telefono(telefono)
         if not seat_ids:
             raise CortesiaInvalida("Elige al menos un lugar.")
         if len(seat_ids) > MAX_POR_CORTESIA:
@@ -188,6 +192,9 @@ class CortesiaService:
                 capturada_en=func.now(),
                 canal=CANAL,
                 nombre_snap=nombre.strip()[:120] or None,
+                # Solo lo que escribio quien la dio (OB1); el telefono, si lo puso.
+                email_snap=email.strip().lower(),
+                telefono_snap=telefono,
             )
             self.db.add(orden)
             await self.db.flush()

@@ -52,8 +52,10 @@ def _respuesta(
         uuid=orden.uuid,
         folio=orden.folio,
         estado=orden.estado,
-        email=persona.email,
-        nombre=persona.nombre,
+        # Lo que escribio quien la dio (OB1), no el registro de la persona.
+        email=orden.email_snap or persona.email,
+        nombre=orden.nombre_snap or persona.nombre,
+        telefono=orden.telefono_snap,
         motivo=cortesia.motivo,
         otorgada_en=cortesia.otorgada_en,
         revocada_en=cortesia.revocada_en,
@@ -87,6 +89,7 @@ async def otorgar(
         datos.nombre,
         datos.motivo,
         actor_id=usuario.id,
+        telefono=datos.telefono,
     )
     await db.commit()
     return _respuesta(

@@ -18,6 +18,8 @@ class CortesiaRequest(BaseModel):
     nombre: NombreDePersona = Field(min_length=1, max_length=120)
     # Prensa, patrocinador, familia del elenco...: queda en la bitacora.
     motivo: Linea = Field(min_length=1, max_length=120)
+    # Opcional. Se normaliza a E.164 en el servicio (normalizar_telefono).
+    telefono: Linea | None = Field(default=None, max_length=30)
 
 
 class LugarDeCortesiaResponse(BaseModel):
@@ -36,6 +38,7 @@ class CortesiaResponse(BaseModel):
     estado: str
     email: str
     nombre: str | None
+    telefono: str | None = None
     motivo: str
     otorgada_en: datetime
     revocada_en: datetime | None

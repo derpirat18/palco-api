@@ -186,8 +186,10 @@ class VentasService:
                     motivo_cortesia=motivo,
                     estado=_estado(orden, partida),
                     entro_en=entro_en if estado == EstadoBoleto.USADO.value else None,
-                    email=comprador.email,
-                    telefono=comprador.telefono,
+                    # Los de esta compra, nunca los del registro del comprador:
+                    # ese telefono pudo darse en otra compra, con otro organizador.
+                    email=orden.email_snap or comprador.email,
+                    telefono=orden.telefono_snap,
                     codigo=codigo,
                 )
             )

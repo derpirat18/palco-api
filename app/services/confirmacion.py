@@ -204,5 +204,10 @@ def _mensaje(
 </body></html>"""  # noqa: E501
 
     return Mensaje(
-        para=comprador.email, asunto=asunto, texto=texto, html=html, imagenes=imagenes
+        # Al correo escrito en esta compra (OB1).
+        para=orden.email_snap or comprador.email,
+        asunto=asunto,
+        texto=texto,
+        html=html,
+        imagenes=imagenes,
     )
