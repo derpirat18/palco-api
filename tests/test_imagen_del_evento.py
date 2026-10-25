@@ -117,6 +117,9 @@ async def test_cada_subida_tiene_otro_nombre(cliente_http, usuarios, carpeta):
             "demasiado grande",
         ),
     ],
+    # Nombres cortos: con los bytes en el nombre, la carpeta temporal de cada
+    # prueba pasa del limite de rutas de Windows (260 caracteres).
+    ids=["php", "vacio", "gif", "pdf", "chica", "bomba"],
 )
 async def test_lo_que_no_es_una_imagen_valida(
     cliente_http, usuarios, carpeta, datos, tipo, frase
