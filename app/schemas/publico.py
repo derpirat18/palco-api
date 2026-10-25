@@ -9,7 +9,9 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
+
+from app.core.textos import NombreDePersona
 
 
 class RecintoPublicoResponse(BaseModel):
@@ -159,3 +161,18 @@ class ConfiguracionPublicaResponse(BaseModel):
 class CorreoEnElNavegadorResponse(BaseModel):
     asunto: str
     html: str
+
+
+class ReenvioResponse(BaseModel):
+    # El correo de la compra, tapado: "an•••@correo.mx".
+    enviado_a: str
+
+
+class PasarBoletoRequest(BaseModel):
+    """BOL6: a quien le pasa el boleto quien compro."""
+
+    # Sale en la lista de la puerta como titular.
+    nombre: NombreDePersona = Field(min_length=1, max_length=120)
+    apellidos: NombreDePersona = Field(min_length=1, max_length=120)
+    # Ahi le llega su liga.
+    email: EmailStr

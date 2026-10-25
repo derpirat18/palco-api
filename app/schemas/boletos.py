@@ -17,6 +17,11 @@ class BoletoResponse(BaseModel):
     llave_qr: str | None
     # Cuando entro, si ya entro (BOL8).
     entro_en: datetime | None
+    # BOL6: a quien se lo paso quien compro ("Ana P."), mientras lo tenga.
+    pasado_a: str | None = None
+    # BOL6: hasta que abre el escaneo, quien compro puede pasarlo o recuperarlo.
+    se_puede_pasar: bool = False
+    se_puede_recuperar: bool = False
 
 
 class FuncionDelBoletoResponse(BaseModel):

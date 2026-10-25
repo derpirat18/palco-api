@@ -15,17 +15,29 @@ from app.api.deps import DB
 from app.core.config import settings
 from app.core.errors import RecursoNoEncontrado
 from app.core.redis import redis_client
+from app.schemas.boletos import (
+    BoletoResponse,
+    BoletosResponse,
+    EventoDelBoletoResponse,
+    FuncionDelBoletoResponse,
+    RecintoDelBoletoResponse,
+)
 from app.schemas.publico import (
     CarteleraResponse,
     ConfiguracionPublicaResponse,
     CorreoEnElNavegadorResponse,
     EventoPublicoResponse,
     MapaPublicoResponse,
+    PasarBoletoRequest,
+    ReenvioResponse,
 )
+from app.services.boletos import PASO, BoletosDeLaOrden, boletos_de_la_orden
 from app.services.cartelera import Busqueda, CarteleraService, clave_de_visitas
 from app.services.confirmacion import armar_confirmacion
 from app.services.limites import limite
+from app.services.pases import boletos_del_pase, pasar, recuperar
 from app.services.publico import PublicoService
+from app.services.reenvio import pedir_reenvio
 
 router = APIRouter(prefix="/publico", tags=["publico"])
 log = logging.getLogger("palco.publico")
@@ -198,3 +210,99 @@ async def correo_en_el_navegador(orden_uuid: UUID, db: DB) -> dict:
     if mensaje is None:
         raise RecursoNoEncontrado("Este correo ya no está disponible.")
     return {"asunto": mensaje.asunto, "html": mensaje.html}
+
+
+@router.post(
+    "/ordenes/{orden_uuid}/reenviar",
+    response_model=ReenvioResponse,
+    dependencies=[limite("reenviar")],
+)
+async def reenviar_liga(orden_uuid: UUID, db: DB) -> dict:
+    """Reenvia el correo con la liga de los boletos, solo al correo de la compra.
+
+    Para quien ve su compra en la computadora y necesita abrirla en el
+    celular (BOL15). Con tope por compra; ver app/services/reenvio.py.
+    """
+    r = await pedir_reenvio(db, orden_uuid)
+    await db.commit()
+    return {"enviado_a": r.enviado_a}
+
+
+# --------------------------------------------------------------------------
+# BOL6: pasar un boleto a un acompanante
+# --------------------------------------------------------------------------
+
+
+def _boletos(vista: BoletosDeLaOrden) -> BoletosResponse:
+    """La misma forma que "Tus boletos" (GET /ordenes/{uuid}/boletos)."""
+    return BoletosResponse(
+        folio=vista.orden.folio,
+        estado=vista.orden.estado,
+        evento=EventoDelBoletoResponse(
+            nombre=vista.evento.nombre,
+            slug=vista.evento.slug,
+            imagen_url=vista.evento.imagen_url,
+        ),
+        funcion=FuncionDelBoletoResponse(
+            uuid=vista.funcion.uuid,
+            inicia_en=vista.funcion.inicia_en,
+            apertura_puertas=vista.funcion.apertura_puertas,
+        ),
+        recinto=RecintoDelBoletoResponse(
+            nombre=vista.recinto.nombre,
+            direccion=vista.recinto.direccion,
+            ciudad=vista.recinto.ciudad,
+            zona_horaria=vista.recinto.zona_horaria,
+        ),
+        boletos=[BoletoResponse(**b.__dict__) for b in vista.boletos],
+        servidor_ahora=vista.servidor_ahora,
+        paso_segundos=PASO,
+    )
+
+
+@router.post(
+    "/ordenes/{orden_uuid}/boletos/{boleto_uuid}/pasar",
+    response_model=BoletosResponse,
+    dependencies=[limite("pasar")],
+)
+async def pasar_boleto(
+    orden_uuid: UUID, boleto_uuid: UUID, datos: PasarBoletoRequest, db: DB
+) -> BoletosResponse:
+    """Quien compro le pasa el boleto a un acompanante (BOL6).
+
+    El boleto cambia de portador y de QR; al acompanante le llega un correo
+    con su liga. Responde "Tus boletos" ya con el cambio.
+    """
+    await pasar(db, orden_uuid, boleto_uuid, datos.nombre, datos.apellidos, datos.email)
+    await db.commit()
+    return _boletos(await boletos_de_la_orden(db, orden_uuid))
+
+
+@router.post(
+    "/ordenes/{orden_uuid}/boletos/{boleto_uuid}/recuperar",
+    response_model=BoletosResponse,
+    dependencies=[limite("pasar")],
+)
+async def recuperar_boleto(
+    orden_uuid: UUID, boleto_uuid: UUID, db: DB
+) -> BoletosResponse:
+    """Quien compro recupera un boleto que habia pasado, con QR nuevo (BOL6)."""
+    await recuperar(db, orden_uuid, boleto_uuid)
+    await db.commit()
+    return _boletos(await boletos_de_la_orden(db, orden_uuid))
+
+
+@router.get(
+    "/pases/{token}",
+    response_model=BoletosResponse,
+    dependencies=[limite("consulta")],
+)
+async def boletos_de_un_pase(
+    token: Annotated[str, Path(min_length=20, max_length=64)], db: DB
+) -> BoletosResponse:
+    """Lo que ve el acompanante con la liga de su correo (BOL6).
+
+    El token es la llave, como el uuid de la orden para quien compro. Si le
+    recuperaron el boleto, la liga responde 404.
+    """
+    return _boletos(await boletos_del_pase(db, token))

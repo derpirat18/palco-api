@@ -34,9 +34,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import ErrorDeDominio
-from app.models.base import EstadoBoleto, EstadoOrden
+from app.models.base import EstadoBoleto, EstadoFuncion, EstadoOrden
 from app.models.catalog import Event, Performance, Venue
-from app.models.sales import Order, OrderItem, Scan, Ticket
+from app.models.sales import Customer, Order, OrderItem, Scan, Ticket
 from app.services.checkout import consultar_orden
 
 VERSION = "PAL1"
@@ -210,6 +210,11 @@ class BoletoVisible:
     llave_qr: str | None
     # BOL8: cuando entro, si ya entro.
     entro_en: datetime | None
+    # BOL6: a quien se lo paso quien compro ("Ana P."), mientras lo tenga.
+    pasado_a: str | None = None
+    # BOL6: lo que quien compro puede hacer con este boleto ahora.
+    se_puede_pasar: bool = False
+    se_puede_recuperar: bool = False
 
 
 @dataclass(frozen=True)
@@ -222,6 +227,15 @@ class BoletosDeLaOrden:
     servidor_ahora: datetime
 
 
+def nombre_corto(persona: Customer) -> str:
+    """'Ana Pérez López' -> 'Ana P.'; sin nombre, el inicio del correo."""
+    nombre = (persona.nombre or "").split()
+    apellidos = (persona.apellidos or "").split()
+    if nombre:
+        return f"{nombre[0]} {apellidos[0][0]}." if apellidos else nombre[0]
+    return f"{persona.email.split('@', 1)[0][:3]}…"
+
+
 async def boletos_de_la_orden(db: AsyncSession, orden_uuid: UUID) -> BoletosDeLaOrden:
     """Lo que ve el comprador en "Tus boletos".
 
@@ -229,21 +243,39 @@ async def boletos_de_la_orden(db: AsyncSession, orden_uuid: UUID) -> BoletosDeLa
     lo tiene quien compro (pantalla de confirmacion y correo). Una orden
     que aun no se paga regresa la lista vacia; el front explica por que
     con el `estado`.
+
+    Un boleto que paso a un acompanante (BOL6) sigue en la lista, sin
+    llave: dice a quien se lo paso y si puede recuperarlo.
     """
     orden, _ = await consultar_orden(db, orden_uuid)
+    return await vista_de_boletos(db, orden, orden.customer_id, comprador=True)
+
+
+async def vista_de_boletos(
+    db: AsyncSession, orden: Order, portador_id: int, comprador: bool
+) -> BoletosDeLaOrden:
+    """Los boletos de la orden como los ve `portador_id`.
+
+    Quien compro ve todos; solo los que siguen siendo suyos llevan llave.
+    Un acompanante (comprador=False) ve solo los que le pasaron.
+    """
+    # Aqui y no arriba: escaner ya importa este modulo.
+    from app.services.escaner import horario_de_escaneo
+
     funcion = await db.get(Performance, orden.performance_id)
     evento = await db.get(Event, funcion.event_id)
     recinto = await db.get(Venue, evento.venue_id)
 
-    filas = (
-        await db.execute(
-            select(Ticket, OrderItem)
-            .join(OrderItem, OrderItem.id == Ticket.order_item_id)
-            .where(OrderItem.order_id == orden.id)
-            .order_by(OrderItem.id)
-            .execution_options(populate_existing=True)
-        )
-    ).all()
+    consulta = (
+        select(Ticket, OrderItem)
+        .join(OrderItem, OrderItem.id == Ticket.order_item_id)
+        .where(OrderItem.order_id == orden.id)
+        .order_by(OrderItem.id)
+        .execution_options(populate_existing=True)
+    )
+    if not comprador:
+        consulta = consulta.where(Ticket.holder_customer_id == portador_id)
+    filas = (await db.execute(consulta)).all()
 
     entradas = dict(
         (
@@ -257,26 +289,56 @@ async def boletos_de_la_orden(db: AsyncSession, orden_uuid: UUID) -> BoletosDeLa
             )
         ).all()
     )
+    # De quien es cada boleto que ya no es de quien compro.
+    otros = {b.holder_customer_id for b, _ in filas} - {portador_id}
+    portadores = (
+        {
+            c.id: c
+            for c in (
+                await db.scalars(select(Customer).where(Customer.id.in_(otros)))
+            ).all()
+        }
+        if comprador and otros
+        else {}
+    )
 
-    pagada = orden.estado == EstadoOrden.PAGADA.value
-    boletos = [
-        BoletoVisible(
-            uuid=boleto.uuid,
-            zona=partida.zona_snap,
-            asiento=partida.asiento_snap,
-            estado=boleto.estado,
-            llave_qr=(
-                _b64(llave_rotatoria(boleto.uuid, boleto.semilla))
-                if pagada and boleto.estado == EstadoBoleto.VALIDO.value
-                else None
-            ),
-            entro_en=(
-                entradas.get(boleto.id)
-                if boleto.estado == EstadoBoleto.USADO.value
-                else None
-            ),
-        )
-        for boleto, partida in filas
-    ]
     ahora: datetime = await db.scalar(select(func.now()))
+    pagada = orden.estado == EstadoOrden.PAGADA.value
+    # Se pasa (y se recupera) hasta que abre el escaneo: despues, las puertas
+    # sin internet ya tienen la lista con el QR de quien lo tenia.
+    se_mueve = (
+        comprador
+        and pagada
+        and funcion.estado != EstadoFuncion.CANCELADA.value
+        and ahora < horario_de_escaneo(funcion)[0]
+    )
+    boletos = []
+    for boleto, partida in filas:
+        suyo = boleto.holder_customer_id == portador_id
+        valido = boleto.estado == EstadoBoleto.VALIDO.value
+        boletos.append(
+            BoletoVisible(
+                uuid=boleto.uuid,
+                zona=partida.zona_snap,
+                asiento=partida.asiento_snap,
+                estado=boleto.estado,
+                llave_qr=(
+                    _b64(llave_rotatoria(boleto.uuid, boleto.semilla))
+                    if pagada and valido and suyo
+                    else None
+                ),
+                entro_en=(
+                    entradas.get(boleto.id)
+                    if boleto.estado == EstadoBoleto.USADO.value
+                    else None
+                ),
+                pasado_a=(
+                    nombre_corto(portadores[boleto.holder_customer_id])
+                    if not suyo and boleto.holder_customer_id in portadores
+                    else None
+                ),
+                se_puede_pasar=se_mueve and valido and suyo,
+                se_puede_recuperar=se_mueve and valido and not suyo,
+            )
+        )
     return BoletosDeLaOrden(orden, funcion, evento, recinto, boletos, ahora)

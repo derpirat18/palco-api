@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.outbox import OutboxEvent
 from app.services.confirmacion import armar_confirmacion
 from app.services.correo import Cartero
+from app.services.correo_pases import armar_correo_de_pase
 
 log = logging.getLogger("palco.bandeja")
 
@@ -64,6 +65,11 @@ class BandejaService:
         self.atiende: dict[str, Atender] = {
             "orden.pagada": self._correo_de_confirmacion,
             "cortesia.emitida": self._correo_de_cortesia,
+            # BOL15: el mismo correo otra vez, a pedido del comprador.
+            "orden.reenvio": self._correo_reenviado,
+            # BOL6: al acompanante, al pasarle un boleto y al recuperarlo.
+            "boleto.pasado": self._correo_de_pase,
+            "boleto.recuperado": self._correo_de_recuperado,
         }
 
     async def _correo_de_confirmacion(
@@ -86,6 +92,30 @@ class BandejaService:
             # Se revoco antes de que saliera: nada que mandar.
             return
         await self.cartero.enviar(mensaje)
+
+    async def _correo_reenviado(self, db: AsyncSession, evento: OutboxEvent) -> None:
+        # Compra o cortesia: se deduce del canal de la orden.
+        mensaje = await armar_confirmacion(db, UUID(evento.payload["orden_uuid"]))
+        if mensaje is None:
+            # Entre el pedido y el envio se reembolso, revoco o ya entraron todos.
+            return
+        await self.cartero.enviar(mensaje)
+
+    async def _correo_de_pase(self, db: AsyncSession, evento: OutboxEvent) -> None:
+        mensaje = await armar_correo_de_pase(
+            db, int(evento.payload["transferencia_id"])
+        )
+        if mensaje is not None:
+            await self.cartero.enviar(mensaje)
+
+    async def _correo_de_recuperado(
+        self, db: AsyncSession, evento: OutboxEvent
+    ) -> None:
+        mensaje = await armar_correo_de_pase(
+            db, int(evento.payload["transferencia_id"]), recuperado=True
+        )
+        if mensaje is not None:
+            await self.cartero.enviar(mensaje)
 
     async def una_vuelta(self) -> ResultadoDeLaBandeja:
         r = ResultadoDeLaBandeja()

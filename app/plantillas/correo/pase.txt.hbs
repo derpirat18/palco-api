@@ -1,0 +1,23 @@
+{{titulo}}
+{{subtitulo}}
+
+{{evento.nombre}}
+{{funcion.fecha}} · {{funcion.hora}}
+{{recinto.nombre}}, {{recinto.ciudad}}
+{{#if funcion.apertura}}Apertura de puertas: {{funcion.apertura}} (hora local de {{recinto.ciudad}}){{else}}Hora local de {{recinto.ciudad}}{{/if}}
+{{#if recuperado}}
+{{de}} recuperó el boleto que te había pasado. La liga que te mandamos ya no lo muestra y su QR ya no sirve para entrar. Si crees que es un error, habla con {{de}}: te lo puede volver a pasar hasta 4 horas antes de la función.
+{{else}}
+{{boton}}: {{boletos_url}}
+
+Este correo no sirve para entrar al evento. Abre «{{boton}}» en tu celular y en el acceso muestra el código QR. El QR cambia cada pocos segundos: las capturas de pantalla no sirven para entrar.
+{{/if}}
+{{#if recuperado}}EL LUGAR{{else}}{{#if (eq num_boletos 1)}}TU LUGAR{{else}}TUS LUGARES{{/if}}{{/if}}
+{{#each boletos}}- Zona {{zona}} · Fila {{fila}} · Lugar {{lugar}}
+{{/each}}
+{{#if soporte_email}}
+¿Necesitas ayuda? Escríbenos a {{soporte_email}}.
+{{/if}}
+Aviso de privacidad: {{enlaces.aviso_privacidad}}
+
+© {{anio}} {{marca}}.{{#if empresa.razon_social}} {{empresa.razon_social}}{{#if empresa.domicilio}}, {{empresa.domicilio}}{{/if}}.{{/if}}

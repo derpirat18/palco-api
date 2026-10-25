@@ -46,6 +46,10 @@ POR_MINUTO = {
     "confirmar": 20,
     "consulta": 60,
     "publico": 120,
+    # Reenviar la liga de los boletos (BOL15). Ademas hay tope por compra.
+    "reenviar": 6,
+    # Pasar o recuperar un boleto (BOL6). Ademas hay tope por compra.
+    "pasar": 10,
 }
 APARTADOS_VIGENTES_POR_IP = 4
 ORDENES_PENDIENTES_POR_CORREO = 2

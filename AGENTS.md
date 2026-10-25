@@ -54,6 +54,17 @@ horario de escaneo y a quien escanea esa función, y el celular lo borra al
 cerrar el horario y al salir. Dos puertas sin red pueden dejar pasar el
 mismo boleto: al subir sale "duplicado" y el escáner avisa "entró dos veces".
 
+Pasar un boleto a un acompañante (BOL6, `app/services/pases.py`): no se
+emite otro boleto; cambia el portador y la semilla del QR, así que el QR
+anterior deja de servir al instante. Solo quien compró pasa y recupera, y
+solo hasta que abre el escaneo (4 h antes): después, a taquilla. El
+acompañante entra con su propia liga (`/pase/<token>`) y no puede volver a
+pasarlo. Ni a él ni en la bandeja va lo que se pagó.
+
+Reenviar la liga de los boletos (BOL15, `app/services/reenvio.py`): solo al
+correo de la compra y con tope por compra. En la computadora no se muestra
+ningún QR, ni siquiera el de la liga: la liga es la llave de los boletos.
+
 ## Stack
 
 - Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, Pydantic v2
