@@ -16,10 +16,11 @@ from app.api.deps import (
     verificar_acceso_cliente,
     verificar_acceso_evento,
 )
-from app.core.errors import EVENTO_NO_EXISTE, FUNCION_NO_EXISTE
+from app.core.errors import EVENTO_NO_EXISTE, FUNCION_NO_EXISTE, RecursoNoEncontrado
 from app.models.acceso import AsignacionDeAcceso
 from app.models.base import EstadoFuncion, RolUsuario
 from app.models.catalog import Event, Performance, Venue
+from app.models.sales import Order
 from app.schemas.acceso import (
     ContadorResponse,
     DeshacerEntradaRequest,
@@ -30,6 +31,8 @@ from app.schemas.acceso import (
     ListaDeAccesoResponse,
     ListadoDeVentasResponse,
     PaqueteSinRedResponse,
+    ReenviarLigaRequest,
+    ReenviarLigaResponse,
     SubirLecturasRequest,
     SubirLecturasResponse,
 )
@@ -37,6 +40,7 @@ from app.services.catalog import CatalogService
 from app.services.escaner import CIERRA_DESPUES, EscanerService, horario_de_escaneo
 from app.services.lista_de_acceso import ListaDeAccesoService
 from app.services.puerta_sin_red import momento_de_la_lectura, paquete_de_la_funcion
+from app.services.reenvio import pedir_reenvio
 from app.services.ventas import VentasService, a_excel, a_excel_evento
 
 router = APIRouter(tags=["acceso"])
@@ -328,3 +332,29 @@ async def descargar_ventas_del_evento(
             "Cache-Control": "no-store",
         },
     )
+
+
+@router.post(
+    "/performances/{performance_id}/ventas/reenviar",
+    response_model=ReenviarLigaResponse,
+    dependencies=[psd_u_organizador],
+)
+async def reenviar_liga(
+    performance_id: int, datos: ReenviarLigaRequest, db: DB, usuario: UsuarioActual
+) -> ReenviarLigaResponse:
+    """Taquilla (BOL13): vuelve a mandar el correo con la liga de los boletos.
+
+    Para quien borro el correo: lo abre en su celular y entra como todos. Va
+    solo al correo de la compra, con el mismo tope que el reenvio del
+    comprador (app/services/reenvio.py).
+    """
+    funcion, _ = await _funcion_del_organizador(performance_id, db, usuario)
+    folio = datos.folio.strip().upper()
+    orden = await db.scalar(
+        select(Order).where(Order.folio == folio, Order.performance_id == funcion.id)
+    )
+    if orden is None:
+        raise RecursoNoEncontrado("No encontramos esa compra en esta función.")
+    r = await pedir_reenvio(db, orden.uuid, actor_id=usuario.id)
+    await db.commit()
+    return ReenviarLigaResponse(folio=folio, enviado_a=r.enviado_a)

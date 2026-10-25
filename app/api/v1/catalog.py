@@ -6,6 +6,7 @@ autorizacion. Ninguna regla de negocio vive aqui.
 
 import base64
 import binascii
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
@@ -38,6 +39,7 @@ from app.schemas.catalog import (
     SeatMapResponse,
     VenueCrear,
     VenueResponse,
+    VenueUbicacion,
     ZonaResponse,
 )
 from app.services.catalog import CatalogService, ConflictoDeCatalogo, slugify
@@ -91,8 +93,35 @@ async def listar_recintos(
     tags=["catalogo"],
 )
 async def crear_recinto(datos: VenueCrear, db: DB) -> Venue:
-    recinto = Venue(**datos.model_dump())
+    campos = datos.model_dump(exclude={"coordenadas"})
+    lat, lng = datos.coordenadas.split(",")
+    recinto = Venue(**campos, lat=Decimal(lat), lng=Decimal(lng))
     db.add(recinto)
+    await db.commit()
+    await db.refresh(recinto)
+    return recinto
+
+
+@router.patch(
+    "/venues/{venue_id}/ubicacion",
+    response_model=VenueResponse,
+    dependencies=[solo_psd],
+    tags=["catalogo"],
+)
+async def cambiar_ubicacion(venue_id: int, datos: VenueUbicacion, db: DB) -> Venue:
+    """BOL9: direccion y punto en el mapa, para "Como llegar".
+
+    Sin coordenadas, Google Maps busca por nombre, direccion y ciudad.
+    """
+    recinto = await db.get(Venue, venue_id)
+    if recinto is None:
+        raise RecursoNoEncontrado("No encontramos ese recinto.")
+    recinto.direccion = datos.direccion or None
+    if datos.coordenadas:
+        lat, lng = datos.coordenadas.split(",")
+        recinto.lat, recinto.lng = Decimal(lat), Decimal(lng)
+    else:
+        recinto.lat = recinto.lng = None
     await db.commit()
     await db.refresh(recinto)
     return recinto

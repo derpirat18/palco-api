@@ -1,5 +1,7 @@
 """Punto de entrada de la API."""
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -9,7 +11,9 @@ from fastapi.responses import Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.router import api_router
+from app.core import fallas
 from app.core.config import settings
+from app.core.db import SessionLocal
 from app.core.errors import ErrorDeDominio
 from app.core.fallas import (
     AtrapaFallas,
@@ -19,11 +23,28 @@ from app.core.fallas import (
 from app.core.proteccion import EncabezadosDeSeguridad, LimiteDeCuerpo
 from app.core.redis import redis_client
 from app.core.respuestas import JSONUtf8
+from app.services import alertas
+from app.services.correo import cartero_por_configuracion
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    vigilancia = None
+    if alertas.activas():
+        # Alertas por correo a PSD (A4): fallas de la API y revision cada minuto.
+        cartero = cartero_por_configuracion()
+        fallas.al_fallar = lambda folio, metodo, ruta, exc: alertas.avisar_falla(
+            SessionLocal, cartero, folio, metodo, ruta, exc
+        )
+        vigilancia = asyncio.create_task(
+            alertas.vigilar(SessionLocal, cartero, redis_client)
+        )
     yield
+    if vigilancia is not None:
+        vigilancia.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await vigilancia
+    fallas.al_fallar = None
     await redis_client.aclose()
 
 

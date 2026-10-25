@@ -5,7 +5,8 @@
 {{funcion.fecha}} · {{funcion.hora}}
 {{recinto.nombre}}, {{recinto.ciudad}}
 {{#if funcion.apertura}}Apertura de puertas: {{funcion.apertura}} (hora local de {{recinto.ciudad}}){{else}}Hora local de {{recinto.ciudad}}{{/if}}
-{{#if recuperado}}
+{{#if mapa_url}}Cómo llegar: {{mapa_url}}
+{{/if}}{{#if recuperado}}
 {{de}} recuperó el boleto que te había pasado. La liga que te mandamos ya no lo muestra y su QR ya no sirve para entrar. Si crees que es un error, habla con {{de}}: te lo puede volver a pasar hasta 4 horas antes de la función.
 {{else}}
 {{boton}}: {{boletos_url}}

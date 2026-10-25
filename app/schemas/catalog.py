@@ -1,11 +1,12 @@
 """Esquemas del catalogo."""
 
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.textos import Linea, Parrafo, UrlHttps
 from app.services.seat_maps import (  # noqa: F401  (re-export)
@@ -18,6 +19,25 @@ from app.services.seat_maps import (  # noqa: F401  (re-export)
 TasaIva = Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
 
 
+_COORDENADAS = re.compile(r"(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)")
+
+
+def leer_coordenadas(texto: str) -> tuple[float, float]:
+    """'25.4232, -101.0053' (copiadas de Google Maps) o una liga larga de Maps
+    con '@25.4232,-101.0053' o 'query=25.4232,-101.0053'."""
+    limpio = texto.strip().replace("%2C", ",").replace("%2c", ",")
+    m = re.search(r"@" + _COORDENADAS.pattern, limpio) or _COORDENADAS.search(limpio)
+    if not m:
+        raise ValueError(
+            "Pega las coordenadas como las copia Google Maps, por ejemplo "
+            "25.4232, -101.0053."
+        )
+    lat, lng = float(m.group(1)), float(m.group(2))
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        raise ValueError("Esas coordenadas no existen. Revisa que estén completas.")
+    return round(lat, 6), round(lng, 6)
+
+
 class VenueCrear(BaseModel):
     nombre: Linea = Field(min_length=1, max_length=160)
     ciudad: Linea = Field(min_length=1, max_length=80)
@@ -26,6 +46,31 @@ class VenueCrear(BaseModel):
     zona_horaria: str = Field(default="America/Mexico_City", max_length=64)
     direccion: Linea | None = Field(default=None, max_length=300)
     capacidad: int | None = Field(default=None, gt=0)
+    # Obligatorias (25 oct): el punto exacto para "Como llegar" (BOL9). Se
+    # pegan como las copia Google Maps: "25.4232, -101.0053".
+    coordenadas: str = Field(min_length=3, max_length=300)
+
+    @field_validator("coordenadas")
+    @classmethod
+    def _coordenadas(cls, v: str) -> str:
+        lat, lng = leer_coordenadas(v)
+        return f"{lat},{lng}"
+
+
+class VenueUbicacion(BaseModel):
+    """BOL9: la direccion y el punto en el mapa del recinto. Solo PSD."""
+
+    direccion: Linea | None = Field(default=None, max_length=300)
+    # Vacio o nulo: sin coordenadas (Maps busca por la direccion).
+    coordenadas: str | None = Field(default=None, max_length=300)
+
+    @field_validator("coordenadas")
+    @classmethod
+    def _coordenadas(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        lat, lng = leer_coordenadas(v)
+        return f"{lat},{lng}"
 
 
 class VenueResponse(BaseModel):
@@ -36,6 +81,10 @@ class VenueResponse(BaseModel):
     pais: str
     zona_horaria: str
     capacidad: int | None
+    # Ubicacion (BOL9): "Como llegar" en Mis boletos y en el recordatorio.
+    direccion: str | None = None
+    lat: float | None = None
+    lng: float | None = None
 
     model_config = {"from_attributes": True}
 

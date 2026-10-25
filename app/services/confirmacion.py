@@ -141,9 +141,9 @@ def datos_del_correo(
             "iva": pesos(orden.iva),
             "total": pesos(orden.total),
             "moneda": orden.moneda,
-            # La tarjeta (Visa •••• 4242) espera autorizacion: viene de Stripe
-            # al cobrar, zona critica.
-            "metodo": None,
+            # "Visa •••• 4242", guardada al pagar (BOL1). Las compras de antes
+            # no la tienen: el correo dice solo "Pagado el ...".
+            "metodo": orden.tarjeta_snap,
             "pagada_en": (
                 f"{fecha_corta(orden.pagada_en, zona).split(', ', 1)[1]}, "
                 f"{hora_corta(orden.pagada_en, zona)}"

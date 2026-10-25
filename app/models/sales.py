@@ -190,6 +190,8 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     # cortesia el telefono es opcional.
     email_snap: Mapped[str | None] = mapped_column(String(255))
     telefono_snap: Mapped[str | None] = mapped_column(String(16))
+    # BOL1: con que se pago, "Visa •••• 4242". Nunca el numero completo.
+    tarjeta_snap: Mapped[str | None] = mapped_column(String(40))
 
     comprador: Mapped["Customer"] = relationship(back_populates="ordenes")
     partidas: Mapped[list["OrderItem"]] = relationship(back_populates="orden")

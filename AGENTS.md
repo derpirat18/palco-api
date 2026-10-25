@@ -61,9 +61,26 @@ solo hasta que abre el escaneo (4 h antes): después, a taquilla. El
 acompañante entra con su propia liga (`/pase/<token>`) y no puede volver a
 pasarlo. Ni a él ni en la bandeja va lo que se pagó.
 
-Reenviar la liga de los boletos (BOL15, `app/services/reenvio.py`): solo al
-correo de la compra y con tope por compra. En la computadora no se muestra
+Reenviar la liga de los boletos (BOL15 y BOL13 desde Ventas,
+`app/services/reenvio.py`): solo al correo de la compra y con tope por compra. En la computadora no se muestra
 ningún QR, ni siquiera el de la liga: la liga es la llave de los boletos.
+
+## Alertas y recordatorios
+
+- **Alertas a PSD por correo** (`app/services/alertas.py`): cobro sin
+  boletos, correos que la bandeja ya no reintenta, barrido o bandeja
+  detenidos y fallas 500. Salen directo por SMTP (no por la bandeja), a la
+  lista que PSD administra en el panel (`alert_recipients`), una vez cada
+  30 min por falla. La revisión corre dentro de la API, cada minuto, con
+  candado de la base. Apagadas en local y en pruebas (`ALERTAS_ACTIVAS`).
+  Si la API misma se cae, nadie avisa: eso es el monitor externo (A2).
+- **Recordatorio 24 h antes** (`app/services/recordatorios.py`, BOL10): a
+  quien compró y a cada acompañante, una vez, por la bandeja. No sale si se
+  compró (o se pasó) con menos de 24 h.
+- **La tarjeta en el correo** (BOL1): solo marca y últimos 4, tomados del
+  cargo de Stripe al pagar (`orders.tarjeta_snap`).
+- **Ubicación del recinto** (BOL9): las coordenadas son obligatorias al dar
+  de alta un recinto; «Cómo llegar» abre ese punto en Google Maps.
 
 ## Stack
 

@@ -241,3 +241,36 @@ def test_sin_secreto_de_webhook_no_se_acepta_nada():
     payload = b"{}"
     with pytest.raises(PasarelaSinConfigurar):
         p.verificar_evento(payload, firmar(payload))
+
+
+# --------------------------------------------------------------------------
+# BOL1: la tarjeta para el correo
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_obtener_trae_marca_y_ultimos_4_de_la_tarjeta():
+    cargo = {
+        "id": "ch_1",
+        "object": "charge",
+        "payment_method_details": {
+            "type": "card",
+            "card": {"brand": "visa", "last4": "4242", "exp_year": 2030},
+        },
+    }
+    p, http = pasarela(
+        [
+            (200, intento("requires_capture", latest_charge=cargo)),
+            (200, intento("requires_capture", latest_charge="ch_1")),
+            (200, intento("requires_payment_method", latest_charge=None)),
+        ]
+    )
+
+    r = await p.obtener("pi_123")
+
+    assert r.tarjeta == "Visa •••• 4242"
+    metodo, url, _, _ = http.peticiones[0]
+    assert metodo == "get" and "expand" in url and "latest_charge" in url
+    # Sin el cargo expandido, o sin cargo todavia: sin tarjeta, sin error.
+    assert (await p.obtener("pi_123")).tarjeta is None
+    assert (await p.obtener("pi_123")).tarjeta is None

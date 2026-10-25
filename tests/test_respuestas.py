@@ -29,7 +29,11 @@ async def test_acentos_viajan_en_utf8(cliente_http, usuarios):
     r = await cliente_http.post(
         f"{API}/venues",
         headers=auth(token_de(usuarios["admin"])),
-        json={"nombre": nombre, "ciudad": "Ciudad de México"},
+        json={
+            "nombre": nombre,
+            "ciudad": "Ciudad de México",
+            "coordenadas": "19.4326, -99.1332",
+        },
     )
     assert r.status_code == 201, r.text
     declara_utf8(r)

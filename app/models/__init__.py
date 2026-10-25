@@ -5,6 +5,7 @@ modelo nuevo debe quedar listado aqui o sus migraciones no se generan.
 """
 
 from app.models.acceso import AsignacionDeAcceso, ConsultaDeDatos
+from app.models.alertas import Alerta, DestinatarioDeAlertas
 from app.models.base import Base
 from app.models.catalog import (
     Client,
@@ -41,6 +42,7 @@ from app.models.users import User
 
 __all__ = [
     "AccessDevice",
+    "Alerta",
     "AsignacionDeAcceso",
     "Base",
     "Client",
@@ -48,6 +50,7 @@ __all__ = [
     "ConsultaDeDatos",
     "Cortesia",
     "Customer",
+    "DestinatarioDeAlertas",
     "DireccionAnterior",
     "DiscountCode",
     "DiscountRedemption",

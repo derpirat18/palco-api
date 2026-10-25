@@ -223,3 +223,15 @@ class LecturaSubidaResponse(BaseModel):
 class SubirLecturasResponse(BaseModel):
     resultados: list[LecturaSubidaResponse]
     contador: ContadorResponse
+
+
+class ReenviarLigaRequest(BaseModel):
+    """BOL13: el folio de la compra (columna Folio de Ventas)."""
+
+    folio: str = Field(min_length=4, max_length=20)
+
+
+class ReenviarLigaResponse(BaseModel):
+    folio: str
+    # El correo de la compra, tapado: "an•••@correo.mx".
+    enviado_a: str

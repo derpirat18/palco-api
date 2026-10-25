@@ -22,6 +22,10 @@ from app.core.respuestas import JSONUtf8
 
 log = logging.getLogger("palco.fallas")
 
+# Lo conecta app/main.py al arrancar (alertas por correo, A4):
+# al_fallar(folio, metodo, ruta, excepcion). Aqui no se importa el servicio.
+al_fallar = None
+
 SISTEMA_NO_DISPONIBLE = (
     "El sistema no está disponible en este momento. Intenta de nuevo en unos minutos."
 )
@@ -64,7 +68,7 @@ class AtrapaFallas:
 
         try:
             await self.app(scope, receive, enviar)
-        except Exception:
+        except Exception as exc:
             folio = nuevo_folio()
             # Alerta para PSD (A1/A4): aqui esta todo lo que el usuario no ve.
             log.exception(
@@ -73,6 +77,11 @@ class AtrapaFallas:
                 scope.get("method"),
                 scope.get("path"),
             )
+            if al_fallar is not None:
+                try:
+                    al_fallar(folio, scope.get("method"), scope.get("path"), exc)
+                except Exception:
+                    log.exception("No se pudo avisar la falla %s", folio)
             if empezo:
                 # La respuesta ya salio a medias: no hay forma de cambiarla.
                 raise

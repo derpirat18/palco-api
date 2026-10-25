@@ -75,6 +75,9 @@ class IntentoDePago:
     moneda: str
     client_secret: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)
+    # BOL1: "Visa •••• 4242", para el correo. Solo marca y ultimos 4: el
+    # numero completo nunca llega aqui (lo tiene Stripe).
+    tarjeta: str | None = None
 
 
 class Pasarela(Protocol):
@@ -122,6 +125,28 @@ def _anotar(operacion: str, exc: stripe.StripeError) -> None:
     log.log(nivel, "Stripe al %s: %s: %s", operacion, type(exc).__name__, exc)
 
 
+_MARCAS = {
+    "visa": "Visa",
+    "mastercard": "Mastercard",
+    "amex": "American Express",
+    "discover": "Discover",
+    "diners": "Diners Club",
+    "jcb": "JCB",
+    "unionpay": "UnionPay",
+}
+
+
+def _tarjeta(pi) -> str | None:
+    """'Visa •••• 4242' del cargo del intento, si Stripe lo mando expandido."""
+    try:
+        tarjeta = pi.latest_charge.payment_method_details.card
+        marca = _MARCAS.get(str(tarjeta.brand), str(tarjeta.brand).title())
+        return f"{marca} •••• {tarjeta.last4}"
+    except (AttributeError, KeyError, TypeError):
+        # Sin cargo todavia, o el cargo viene como id (sin expandir).
+        return None
+
+
 def _intento(pi) -> IntentoDePago:
     return IntentoDePago(
         id=pi.id,
@@ -131,6 +156,7 @@ def _intento(pi) -> IntentoDePago:
         client_secret=pi.client_secret,
         # En el SDK v16 los objetos de Stripe ya no se comportan como dict.
         metadata=pi.metadata.to_dict() if pi.metadata else {},
+        tarjeta=_tarjeta(pi),
     )
 
 
@@ -209,7 +235,10 @@ class StripePasarela:
 
     async def obtener(self, intento_id: str) -> IntentoDePago:
         try:
-            pi = await self._intentos().retrieve_async(intento_id)
+            # Con el cargo expandido: de ahi sale la tarjeta para el correo (BOL1).
+            pi = await self._intentos().retrieve_async(
+                intento_id, params={"expand": ["latest_charge"]}
+            )
         except stripe.StripeError as exc:
             _anotar("consultar", exc)
             raise PasarelaNoDisponible(

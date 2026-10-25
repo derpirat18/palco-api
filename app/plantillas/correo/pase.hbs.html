@@ -72,6 +72,7 @@
       <p style="margin:0;font-size:15px;line-height:22px;">{{funcion.fecha}} · {{funcion.hora}}</p>
       <p style="margin:0;font-size:15px;line-height:22px;">{{recinto.nombre}}, {{recinto.ciudad}}</p>
       <p style="margin:4px 0 0;font-size:13px;line-height:20px;color:#6b6980;">{{#if funcion.apertura}}Apertura de puertas: {{funcion.apertura}} · {{/if}}Hora local de {{recinto.ciudad}}</p>
+      {{#if mapa_url}}<p style="margin:6px 0 0;font-size:14px;line-height:20px;"><a href="{{mapa_url}}" style="color:#554c7a;font-weight:600;">📍 Cómo llegar</a></p>{{/if}}
       <p style="margin:10px 0 0;font-size:14px;line-height:20px;font-weight:600;">{{num_boletos}}× {{#if (eq num_boletos 1)}}boleto digital{{else}}boletos digitales{{/if}}</p>
     </td></tr>
 

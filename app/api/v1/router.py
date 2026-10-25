@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     acceso,
+    alertas,
     apartados,
     auth,
     catalog,
@@ -26,3 +27,4 @@ api_router.include_router(cortesias.router)
 api_router.include_router(publico.router)
 api_router.include_router(usuarios.router)
 api_router.include_router(acceso.router)
+api_router.include_router(alertas.router)

@@ -467,6 +467,8 @@ class CheckoutService:
         boletos = await self._emitir(orden, partidas)
         orden.estado = PAGADA
         orden.pagada_en = await self._ahora()
+        # BOL1 (autorizado 25 oct): solo marca y ultimos 4, para el correo.
+        orden.tarjeta_snap = intento.tarjeta
         await self._anunciar(orden, "orden.pagada", boletos)
         await self.db.commit()
 

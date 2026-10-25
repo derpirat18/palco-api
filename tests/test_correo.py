@@ -146,6 +146,25 @@ async def test_el_correo_lleva_a_mis_boletos_y_no_trae_qr(
         assert "Crear mi cuenta" not in parte and "Mi cuenta" not in parte
 
 
+async def test_el_correo_dice_con_que_tarjeta_se_pago(
+    db, clientes, hold_service, stripe_falso
+):
+    """BOL1: solo marca y ultimos 4, tomados de Stripe al pagar."""
+    _, _, servicio, iniciada = await orden_iniciada(
+        db, hold_service, stripe_falso, clientes[0].id, email="ana@correo.mx"
+    )
+    pid = iniciada.orden.stripe_payment_intent_id
+    stripe_falso.autorizar(pid)
+    stripe_falso.poner(pid, tarjeta="Visa •••• 4242")
+
+    orden = await servicio.finalizar(iniciada.orden.id)
+
+    assert orden.tarjeta_snap == "Visa •••• 4242"
+    m = await armar_confirmacion(db, orden.uuid)
+    for parte in (m.html, m.texto):
+        assert "Pagado con Visa •••• 4242 el " in parte
+
+
 async def test_el_pie_solo_lleva_lo_que_esta_configurado(
     db, clientes, hold_service, stripe_falso, monkeypatch
 ):

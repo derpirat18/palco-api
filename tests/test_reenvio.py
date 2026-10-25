@@ -128,3 +128,41 @@ async def test_si_se_reembolsa_antes_de_salir_no_se_manda(
 
     assert resultado.entregados == 1, "se marca atendido"
     assert len(cartero.enviados) == 1, "pero no sale otro correo"
+
+
+# --------------------------------------------------------------------------
+# Desde Ventas (BOL13)
+# --------------------------------------------------------------------------
+
+
+async def test_taquilla_reenvia_por_folio(
+    cliente_http, db, clientes, hold_service, stripe_falso, usuarios
+):
+    from tests.test_catalog import auth, token_de
+
+    orden = await orden_pagada(db, hold_service, stripe_falso, clientes[0].id)
+    url = f"/api/v1/performances/{orden.performance_id}/ventas/reenviar"
+
+    r = await cliente_http.post(
+        url,
+        json={"folio": orden.folio.lower()},
+        headers=auth(token_de(usuarios["org_a"])),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {"folio": orden.folio, "enviado_a": "a•••@correo.mx"}
+    hecho = await db.scalar(select(OutboxEvent).where(OutboxEvent.tipo == TIPO))
+    assert hecho.payload["actor_id"] == usuarios["org_a"].id
+
+    # Otro organizador no ve esa funcion; la puerta no reenvia.
+    r = await cliente_http.post(
+        url, json={"folio": orden.folio}, headers=auth(token_de(usuarios["org_b"]))
+    )
+    assert r.status_code == 404
+    r = await cliente_http.post(
+        url, json={"folio": orden.folio}, headers=auth(token_de(usuarios["acceso"]))
+    )
+    assert r.status_code == 403
+    r = await cliente_http.post(
+        url, json={"folio": "PSD-NOEXISTE"}, headers=auth(token_de(usuarios["admin"]))
+    )
+    assert r.status_code == 404

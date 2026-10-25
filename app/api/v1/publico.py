@@ -253,6 +253,8 @@ def _boletos(vista: BoletosDeLaOrden) -> BoletosResponse:
             direccion=vista.recinto.direccion,
             ciudad=vista.recinto.ciudad,
             zona_horaria=vista.recinto.zona_horaria,
+            lat=vista.recinto.lat,
+            lng=vista.recinto.lng,
         ),
         boletos=[BoletoResponse(**b.__dict__) for b in vista.boletos],
         servidor_ahora=vista.servidor_ahora,

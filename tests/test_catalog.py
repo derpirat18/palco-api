@@ -75,7 +75,12 @@ async def crear_recinto(cliente_http, tk, nombre="Teatro Uno") -> int:
     r = await cliente_http.post(
         f"{API}/venues",
         headers=auth(tk),
-        json={"nombre": nombre, "ciudad": "CDMX", "capacidad": 1200},
+        json={
+            "nombre": nombre,
+            "ciudad": "CDMX",
+            "capacidad": 1200,
+            "coordenadas": "19.4326, -99.1332",
+        },
     )
     assert r.status_code == 201, r.text
     return r.json()["id"]
@@ -130,6 +135,17 @@ async def test_solo_psd_crea_recintos(cliente_http, usuarios):
     assert r.status_code == 403
 
 
+async def test_las_coordenadas_son_obligatorias(cliente_http, usuarios):
+    """Sin el punto en el mapa, "Como llegar" no lleva a la puerta (BOL9)."""
+    r = await cliente_http.post(
+        f"{API}/venues",
+        headers=auth(token_de(usuarios["admin"])),
+        json={"nombre": "Teatro Sin Mapa", "ciudad": "CDMX"},
+    )
+    assert r.status_code == 422
+    assert r.json()["error"]["detalle"]["campos"][0]["campo"] == "coordenadas"
+
+
 async def test_cualquier_usuario_lista_recintos(cliente_http, usuarios):
     await crear_recinto(cliente_http, token_de(usuarios["admin"]))
     r = await cliente_http.get(
@@ -145,7 +161,11 @@ async def test_filtro_por_ciudad(cliente_http, usuarios):
     r = await cliente_http.post(
         f"{API}/venues",
         headers=auth(tk),
-        json={"nombre": "Teatro Monterrey", "ciudad": "Monterrey"},
+        json={
+            "nombre": "Teatro Monterrey",
+            "ciudad": "Monterrey",
+            "coordenadas": "25.6866, -100.3161",
+        },
     )
     assert r.status_code == 201
 

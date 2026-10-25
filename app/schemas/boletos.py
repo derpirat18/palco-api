@@ -43,6 +43,9 @@ class RecintoDelBoletoResponse(BaseModel):
     ciudad: str
     # Las fechas viajan en UTC; el front las muestra a la hora del recinto.
     zona_horaria: str
+    # BOL9: el punto exacto para "Como llegar", si el recinto lo tiene.
+    lat: float | None = None
+    lng: float | None = None
 
 
 class BoletosResponse(BaseModel):

@@ -19,6 +19,7 @@ Reglas:
 """
 
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -31,6 +32,13 @@ from app.models.outbox import OutboxEvent
 from app.services.confirmacion import armar_confirmacion
 from app.services.correo import Cartero
 from app.services.correo_pases import armar_correo_de_pase
+from app.services.recordatorios import (
+    DEL_ACOMPANANTE,
+    DEL_COMPRADOR,
+    correo_del_acompanante,
+    correo_del_comprador,
+    programar,
+)
 
 log = logging.getLogger("palco.bandeja")
 
@@ -58,7 +66,9 @@ Atender = Callable[[AsyncSession, OutboxEvent], Awaitable[None]]
 
 
 class BandejaService:
-    def __init__(self, sesiones, cartero: Cartero, lote: int = 50) -> None:
+    def __init__(
+        self, sesiones, cartero: Cartero, lote: int = 50, recordatorios: bool = True
+    ) -> None:
         self.sesiones = sesiones
         self.cartero = cartero
         self.lote = lote
@@ -70,7 +80,13 @@ class BandejaService:
             # BOL6: al acompanante, al pasarle un boleto y al recuperarlo.
             "boleto.pasado": self._correo_de_pase,
             "boleto.recuperado": self._correo_de_recuperado,
+            # BOL10: 24 h antes de la funcion.
+            DEL_COMPRADOR: self._recordatorio_del_comprador,
+            DEL_ACOMPANANTE: self._recordatorio_del_acompanante,
         }
+        # Los recordatorios se programan una vez por minuto, no en cada vuelta.
+        self.recordatorios = recordatorios
+        self._proximos_recordatorios = 0.0
 
     async def _correo_de_confirmacion(
         self, db: AsyncSession, evento: OutboxEvent
@@ -117,7 +133,38 @@ class BandejaService:
         if mensaje is not None:
             await self.cartero.enviar(mensaje)
 
+    async def _recordatorio_del_comprador(
+        self, db: AsyncSession, evento: OutboxEvent
+    ) -> None:
+        mensaje = await correo_del_comprador(db, UUID(evento.payload["orden_uuid"]))
+        if mensaje is not None:
+            await self.cartero.enviar(mensaje)
+
+    async def _recordatorio_del_acompanante(
+        self, db: AsyncSession, evento: OutboxEvent
+    ) -> None:
+        mensaje = await correo_del_acompanante(
+            db, int(evento.payload["transferencia_id"])
+        )
+        if mensaje is not None:
+            await self.cartero.enviar(mensaje)
+
+    async def _programar_recordatorios(self) -> None:
+        if not self.recordatorios or time.monotonic() < self._proximos_recordatorios:
+            return
+        self._proximos_recordatorios = time.monotonic() + 60
+        try:
+            async with self.sesiones() as db:
+                n = await programar(db)
+                await db.commit()
+            if n:
+                log.info("Bandeja: %d recordatorio(s) programado(s)", n)
+        except Exception:
+            # La bandeja sigue mandando lo demas; se reintenta en un minuto.
+            log.exception("Bandeja: no se pudieron programar los recordatorios")
+
     async def una_vuelta(self) -> ResultadoDeLaBandeja:
+        await self._programar_recordatorios()
         r = ResultadoDeLaBandeja()
         for _ in range(self.lote):
             async with self.sesiones() as db:

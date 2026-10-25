@@ -81,6 +81,9 @@ class Settings(BaseSettings):
 
     # --- Limites contra bots y fuerza bruta (ADR 0016) ---
     # Apagarlos solo en pruebas; fuera de local siempre estan encendidos.
+    # --- Alertas por correo a PSD (A1, A4) ---
+    # Sin valor: encendidas fuera de local. En pruebas, apagadas.
+    ALERTAS_ACTIVAS: bool | None = None
     LIMITES_ACTIVOS: bool = True
     # Cuantos proxies de confianza hay delante de la API (balanceador,
     # CDN). Con 0 se ignora X-Forwarded-For: cualquiera puede escribirlo.
