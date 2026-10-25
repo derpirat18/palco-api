@@ -93,3 +93,13 @@ async def manejar_error_de_validacion(
 
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+# Imagenes de los eventos en local (F7): sin bucket, la API las sirve. En
+# AWS las sirve CloudFront desde el bucket de medios.
+if settings.ENTORNO == "local" and not settings.MEDIOS_BUCKET:
+    from pathlib import Path
+
+    from fastapi.staticfiles import StaticFiles
+
+    Path(settings.MEDIOS_DIR).mkdir(parents=True, exist_ok=True)
+    app.mount("/medios", StaticFiles(directory=settings.MEDIOS_DIR), name="medios")

@@ -27,6 +27,10 @@ dependencies = [
     # Las dos son MIT y Python puro.
     "openpyxl>=3.1",
     "pdfminer.six>=20250506",
+    # Imagenes de los eventos (F7, app/services/medios.py): revisar, limpiar y
+    # reducir lo que se sube (Pillow), y guardarlo en S3 (boto3).
+    "Pillow>=11.0",
+    "boto3>=1.35",
 ]
 
 [project.optional-dependencies]

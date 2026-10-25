@@ -107,6 +107,15 @@ class Settings(BaseSettings):
     # Base de los enlaces que salen en correos ("Ver mis boletos").
     FRONT_URL: str = "http://localhost:5173"
 
+    # --- Imagenes de los eventos (F7) ---
+    # En AWS: el bucket de medios, servido por CloudFront en
+    # MEDIOS_URL/medios/... En local, sin bucket, se guardan en MEDIOS_DIR y
+    # la API las sirve en /medios.
+    MEDIOS_BUCKET: str = ""
+    MEDIOS_REGION: str = ""
+    MEDIOS_URL: str = ""
+    MEDIOS_DIR: str = "medios_local"
+
     # --- Correo (ADR 0015) ---
     # SMTP sirve igual para el buzon local (Mailpit, puerto 1025, sin
     # usuario) que para Amazon SES (puerto 587, STARTTLS, usuario SMTP).

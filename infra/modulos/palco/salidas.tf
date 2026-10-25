@@ -57,3 +57,8 @@ output "distribucion" {
   description = "Id de CloudFront, para refrescar el front despues de publicarlo."
   value       = var.con_cloudfront ? aws_cloudfront_distribution.api[0].id : ""
 }
+
+output "bucket_medios" {
+  description = "Donde se guardan las imagenes que suben los organizadores (F7)."
+  value       = var.con_cloudfront ? aws_s3_bucket.medios[0].bucket : ""
+}

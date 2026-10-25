@@ -200,6 +200,14 @@ resource "aws_cloudfront_distribution" "api" {
     origin_access_control_id = aws_cloudfront_origin_access_control.front[0].id
   }
 
+  # Las imagenes que suben los organizadores (medios.tf). El mismo acceso
+  # firmado que el front: el bucket no es publico.
+  origin {
+    origin_id                = "medios"
+    domain_name              = aws_s3_bucket.medios[0].bucket_regional_domain_name
+    origin_access_control_id = aws_cloudfront_origin_access_control.front[0].id
+  }
+
   # La API.
   ordered_cache_behavior {
     path_pattern             = "/api/*"
@@ -210,6 +218,19 @@ resource "aws_cloudfront_distribution" "api" {
     cache_policy_id          = data.aws_cloudfront_cache_policy.sin_cache.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.todo_menos_host.id
     compress                 = true
+  }
+
+  # Imagenes de los eventos. Llevan huella en el nombre: cache largo. Sin la
+  # funcion de rutas: una imagen que no existe es un 404, no index.html.
+  ordered_cache_behavior {
+    path_pattern               = "/medios/*"
+    target_origin_id           = "medios"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.archivos.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.seguridad.id
+    compress                   = false
   }
 
   # Todo lo demas: la pagina de compra.

@@ -65,8 +65,8 @@ resource "aws_iam_role_policy" "ejecucion_secretos" {
   policy = data.aws_iam_policy_document.leer_secretos.json
 }
 
-# Lo usa la app mientras corre. Hoy solo para ECS Exec (entrar a un
-# contenedor a dar de alta el primer admin); la app no llama a AWS.
+# Lo usa la app mientras corre: ECS Exec (entrar a un contenedor a dar de
+# alta el primer admin) y subir las imagenes de los eventos (medios.tf).
 resource "aws_iam_role" "tarea" {
   name               = "${local.nombre}-tarea"
   assume_role_policy = data.aws_iam_policy_document.asumir_desde_ecs.json
@@ -113,6 +113,11 @@ locals {
       CORREO_SMTP_STARTTLS      = "true"
       CORREO_REMITENTE          = var.correo_remitente
       TURNSTILE_SITE_KEY        = var.turnstile_site_key
+      # Imagenes de los eventos (medios.tf). Sin CloudFront no hay donde
+      # servirlas: la API avisa que no esta configurado.
+      MEDIOS_BUCKET = var.con_cloudfront ? aws_s3_bucket.medios[0].bucket : ""
+      MEDIOS_REGION = data.aws_region.actual.region
+      MEDIOS_URL    = local.url_publica
     } : { name = nombre, value = valor }
   ]
 

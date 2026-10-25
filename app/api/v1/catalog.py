@@ -7,7 +7,7 @@ autorizacion. Ninguna regla de negocio vive aqui.
 import base64
 import binascii
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 
@@ -42,6 +42,12 @@ from app.schemas.catalog import (
 )
 from app.services.catalog import CatalogService, ConflictoDeCatalogo, slugify
 from app.services.mapas_archivo import leer_archivo
+from app.services.medios import (
+    MENSAJE_DE_TAMANO,
+    TAMANO_MAXIMO,
+    ImagenInvalida,
+    guardar_imagen_de_evento,
+)
 from app.services.seat_maps import (
     EspecificacionDeMapa,
     MapaInvalido,
@@ -51,6 +57,8 @@ from app.services.seat_maps import (
 )
 
 router = APIRouter()
+
+TIPOS_DE_IMAGEN = ("image/jpeg", "image/png", "image/webp")
 
 solo_psd = Depends(requiere_rol(RolUsuario.ADMIN_PSD))
 psd_u_organizador = Depends(requiere_rol(RolUsuario.ADMIN_PSD, RolUsuario.ORGANIZADOR))
@@ -415,6 +423,53 @@ async def actualizar_evento(
     for campo, valor in cambios.items():
         setattr(evento, campo, valor)
 
+    await db.commit()
+    await db.refresh(evento)
+    return evento
+
+
+@router.put(
+    "/events/{event_id}/imagen",
+    response_model=EventoResponse,
+    dependencies=[psd_u_organizador],
+    tags=["catalogo"],
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                t: {"schema": {"type": "string", "format": "binary"}}
+                for t in TIPOS_DE_IMAGEN
+            },
+        }
+    },
+)
+async def subir_imagen_del_evento(
+    event_id: int, request: Request, db: DB, usuario: UsuarioActual
+) -> Event:
+    """Sube la imagen del evento (F7). El cuerpo es el archivo tal cual
+    (Content-Type image/jpeg, image/png o image/webp), hasta 4 MB.
+
+    El servidor la revisa, la limpia y la reduce (app/services/medios.py).
+    """
+    servicio = CatalogService(db)
+    evento = await servicio.obtener_evento(event_id)
+    verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=EVENTO_NO_EXISTE)
+
+    tipo = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if tipo not in TIPOS_DE_IMAGEN:
+        raise ImagenInvalida("Sube una imagen JPG, PNG o WebP.")
+    largo = request.headers.get("content-length", "")
+    if largo.isdigit() and int(largo) > TAMANO_MAXIMO:
+        raise ImagenInvalida(MENSAJE_DE_TAMANO)
+    datos = bytearray()
+    async for parte in request.stream():
+        datos += parte
+        if len(datos) > TAMANO_MAXIMO:
+            raise ImagenInvalida(MENSAJE_DE_TAMANO)
+
+    evento.imagen_url = await guardar_imagen_de_evento(
+        evento.uuid, bytes(datos), str(request.base_url)
+    )
     await db.commit()
     await db.refresh(evento)
     return evento

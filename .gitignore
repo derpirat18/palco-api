@@ -28,3 +28,6 @@ dump.rdb
 *.tfstate.*
 *.tfplan
 crash.log
+
+# Imagenes de eventos subidas en local (F7).
+medios_local/
