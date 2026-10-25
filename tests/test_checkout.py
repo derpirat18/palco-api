@@ -217,7 +217,7 @@ async def test_la_orden_congela_importes_y_condiciones(
     assert orden.comision_pct_snap == Decimal("10.00")
     assert orden.estado == "pendiente"
     assert orden.hold_id == hold
-    assert re.fullmatch(r"PAL-[0-9A-HJKMNP-TV-Z]{8}", orden.folio)
+    assert re.fullmatch(r"PSD-[0-9A-HJKMNP-TV-Z]{8}", orden.folio)
 
     assert [(p.zona_snap, p.asiento_snap) for p in iniciada.partidas] == [
         ("Luneta", "Fila A · 1"),

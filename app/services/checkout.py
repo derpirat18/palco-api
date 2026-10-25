@@ -101,7 +101,9 @@ def _azar(n: int) -> str:
 
 
 def nuevo_folio() -> str:
-    return f"PAL-{_azar(8)}"
+    # PSD-: es lo que ve el comprador (correo, boletos, taquilla). Los folios
+    # PAL- de antes siguen siendo validos: ya salieron en correos y boletos.
+    return f"PSD-{_azar(8)}"
 
 
 def nuevo_codigo_de_boleto() -> str:
@@ -371,7 +373,9 @@ class CheckoutService:
         intento = await self.pasarela.crear_intento(
             monto_centavos=centavos(total),
             moneda=MONEDA,
-            descripcion=f"Palco {orden.folio} · {evento.nombre}"[:200],
+            # Lo que se ve en Stripe y en sus recibos: la marca, no el nombre
+            # interno del sistema.
+            descripcion=f"PSD Events {orden.folio} · {evento.nombre}"[:200],
             metadata={
                 "orden_uuid": str(orden.uuid),
                 "folio": orden.folio,

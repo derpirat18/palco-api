@@ -29,10 +29,14 @@ from app.schemas.acceso import (
     FuncionDePuertaResponse,
     ListaDeAccesoResponse,
     ListadoDeVentasResponse,
+    PaqueteSinRedResponse,
+    SubirLecturasRequest,
+    SubirLecturasResponse,
 )
 from app.services.catalog import CatalogService
 from app.services.escaner import CIERRA_DESPUES, EscanerService, horario_de_escaneo
 from app.services.lista_de_acceso import ListaDeAccesoService
+from app.services.puerta_sin_red import momento_de_la_lectura, paquete_de_la_funcion
 from app.services.ventas import VentasService, a_excel, a_excel_evento
 
 router = APIRouter(tags=["acceso"])
@@ -151,6 +155,70 @@ async def escanear(
     )
     await db.commit()
     return EscaneoResponse.model_validate(escaneo)
+
+
+@router.get(
+    "/performances/{performance_id}/paquete-sin-red",
+    response_model=PaqueteSinRedResponse,
+    dependencies=[personal],
+)
+async def paquete_sin_red(
+    performance_id: int, db: DB, usuario: UsuarioActual, response: Response
+) -> PaqueteSinRedResponse:
+    """Lo que el escaner necesita para seguir sin internet (E3b): cada boleto
+    de la funcion con su estado y la llave de su QR. Solo para quien puede
+    escanear esta funcion, y solo cerca de su horario de escaneo."""
+    funcion, evento = await _funcion_de_la_puerta(performance_id, db, usuario)
+    paquete = await paquete_de_la_funcion(db, funcion, evento)
+    response.headers["Cache-Control"] = "no-store"
+    return PaqueteSinRedResponse.model_validate(paquete)
+
+
+@router.post(
+    "/performances/{performance_id}/escaneos-sin-red",
+    response_model=SubirLecturasResponse,
+    dependencies=[personal],
+)
+async def subir_escaneos_sin_red(
+    performance_id: int, datos: SubirLecturasRequest, db: DB, usuario: UsuarioActual
+) -> SubirLecturasResponse:
+    """Las lecturas que el celular hizo sin internet (E3b). Cada una se juzga
+    otra vez, a la hora en que se hizo. Subir dos veces la misma no cambia
+    nada (client_scan_id)."""
+    funcion, _ = await _funcion_de_la_puerta(performance_id, db, usuario)
+    servicio = EscanerService(db)
+    ahora = datetime.now(UTC)
+    resultados = []
+    for lectura in datos.lecturas:
+        momento = momento_de_la_lectura(lectura.escaneado_en, ahora)
+        if momento is None:
+            resultados.append(
+                {
+                    "client_scan_id": lectura.client_scan_id,
+                    "escaneo": None,
+                    "rechazo": "muy_vieja",
+                }
+            )
+            continue
+        escaneo = await servicio.escanear(
+            funcion,
+            lectura.codigo,
+            lectura.client_scan_id,
+            usuario,
+            momento=momento,
+            offline=True,
+        )
+        resultados.append(
+            {
+                "client_scan_id": lectura.client_scan_id,
+                "escaneo": EscaneoResponse.model_validate(escaneo),
+            }
+        )
+    await db.commit()
+    return SubirLecturasResponse(
+        resultados=resultados,
+        contador=ContadorResponse.model_validate(await servicio.contador(funcion.id)),
+    )
 
 
 async def _funcion_del_organizador(performance_id: int, db: DB, usuario: UsuarioActual):

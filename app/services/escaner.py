@@ -132,14 +132,19 @@ class EscanerService:
         texto: str,
         client_scan_id: str,
         usuario: User,
+        momento: datetime | None = None,
+        offline: bool = False,
     ) -> Escaneo:
+        """Una lectura de la puerta. Con `momento` y `offline`, una que el
+        celular hizo sin internet (E3b) y sube despues: se juzga a la hora en
+        que se leyo (el QR de ese momento, el horario de ese momento)."""
         previo = await self.db.scalar(
             select(Scan).where(Scan.client_scan_id == client_scan_id)
         )
         if previo is not None:
             return await self._repetir(previo, funcion)
 
-        ahora = datetime.now(UTC)
+        ahora = momento or datetime.now(UTC)
         abre, cierra = horario_de_escaneo(funcion)
         fuera = (
             "funcion_cancelada"
@@ -200,7 +205,7 @@ class EscanerService:
                 ),
                 resultado=resultado,
                 escaneado_en=ahora,
-                offline=False,
+                offline=offline,
                 client_scan_id=client_scan_id,
                 nota=motivo,
             )

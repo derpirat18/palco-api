@@ -90,7 +90,7 @@ async def test_crear_intento_autoriza_sin_cobrar_y_es_idempotente():
     r = await p.crear_intento(
         monto_centavos=181000,
         moneda="MXN",
-        descripcion="Palco PAL-1",
+        descripcion="PSD Events PSD-1",
         metadata={"orden_uuid": "u-1"},
         idempotency_key="orden-u-1",
     )

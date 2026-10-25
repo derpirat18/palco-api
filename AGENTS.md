@@ -46,6 +46,14 @@ los códigos en su lista. Cualquier problema (sin celular, pantalla rota,
 no lee) va a taquilla: PSD o el organizador pueden teclear el código del
 boleto, y queda registrado quién lo hizo.
 
+Sin internet (E3b, `app/services/puerta_sin_red.py`): con red, el escáner
+baja el paquete de la función (cada boleto con la llave de su QR) y con él
+revisa sin red; las lecturas se suben al volver la red y el servidor las
+juzga a la hora en que se hicieron. El paquete solo se entrega cerca del
+horario de escaneo y a quien escanea esa función, y el celular lo borra al
+cerrar el horario y al salir. Dos puertas sin red pueden dejar pasar el
+mismo boleto: al subir sale "duplicado" y el escáner avisa "entró dos veces".
+
 ## Stack
 
 - Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, Pydantic v2

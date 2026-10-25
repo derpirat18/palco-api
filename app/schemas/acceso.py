@@ -161,3 +161,65 @@ class DeshacerEntradaRequest(BaseModel):
 class DeshacerEntradaResponse(BaseModel):
     codigo: str
     contador: ContadorResponse
+
+
+# --------------------------------------------------------------- sin red (E3b)
+
+
+class BoletoDelPaqueteResponse(BaseModel):
+    u: str
+    k: str | None
+    estado: Literal["valido", "usado", "cancelado"]
+    motivo: str | None
+    zona: str
+    asiento: str
+    titular: str
+    folio: str
+    cortesia: bool
+    entro_en: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class PaqueteSinRedResponse(BaseModel):
+    """Lo que el escaner guarda para seguir revisando boletos sin internet."""
+
+    performance_id: int
+    evento: str
+    recinto: str
+    ciudad: str
+    zona_horaria: str
+    inicia_en: datetime
+    escaneo_abre_en: datetime
+    escaneo_cierra_en: datetime
+    servidor_ahora: datetime
+    paso_segundos: int
+    tolerancia_pasos: int
+    boletos: list[BoletoDelPaqueteResponse]
+
+    model_config = {"from_attributes": True}
+
+
+class LecturaSinRed(BaseModel):
+    client_scan_id: str = Field(pattern=r"^[A-Za-z0-9_-]{8,64}$")
+    codigo: str = Field(min_length=1, max_length=200)
+    # La hora del celular, ya corregida con la del servidor.
+    escaneado_en: datetime
+
+
+class SubirLecturasRequest(BaseModel):
+    lecturas: list[LecturaSinRed] = Field(min_length=1, max_length=500)
+
+
+class LecturaSubidaResponse(BaseModel):
+    client_scan_id: str
+    # Lo que dice el servidor. Si el celular dejo pasar y aqui sale
+    # "duplicado", ese boleto entro dos veces (dos puertas sin red).
+    escaneo: EscaneoResponse | None
+    # "muy_vieja": de hace mas de un dia, no se tomo en cuenta.
+    rechazo: str | None = None
+
+
+class SubirLecturasResponse(BaseModel):
+    resultados: list[LecturaSubidaResponse]
+    contador: ContadorResponse
