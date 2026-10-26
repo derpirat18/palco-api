@@ -40,8 +40,9 @@ def leer_coordenadas(texto: str) -> tuple[float, float]:
 
 class VenueCrear(BaseModel):
     nombre: Linea = Field(min_length=1, max_length=160)
+    # De las listas del panel (GEO1): el estado y una ciudad del catálogo.
     ciudad: Linea = Field(min_length=1, max_length=80)
-    estado_geo: Linea | None = Field(default=None, max_length=80)
+    estado_geo: Linea = Field(min_length=2, max_length=80)
     pais: str = Field(default="MX", min_length=2, max_length=2)
     zona_horaria: str = Field(default="America/Mexico_City", max_length=64)
     direccion: Linea | None = Field(default=None, max_length=300)

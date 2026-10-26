@@ -71,13 +71,25 @@ SPEC_MINIMA = {
 }
 
 
+async def asegurar_ciudad(cliente_http, tk, estado, nombre) -> None:
+    """GEO1: la ciudad tiene que estar en el catalogo antes del recinto."""
+    r = await cliente_http.post(
+        f"{API}/catalogos/ciudades",
+        headers=auth(tk),
+        json={"estado": estado, "nombre": nombre},
+    )
+    assert r.status_code in (201, 409), r.text
+
+
 async def crear_recinto(cliente_http, tk, nombre="Teatro Uno") -> int:
+    await asegurar_ciudad(cliente_http, tk, "Ciudad de México", "Ciudad de México")
     r = await cliente_http.post(
         f"{API}/venues",
         headers=auth(tk),
         json={
             "nombre": nombre,
-            "ciudad": "CDMX",
+            "estado_geo": "Ciudad de México",
+            "ciudad": "Ciudad de México",
             "capacidad": 1200,
             "coordenadas": "19.4326, -99.1332",
         },
@@ -99,7 +111,7 @@ async def crear_evento(cliente_http, tk, venue_id, nombre="Circo de Navidad") ->
     r = await cliente_http.post(
         f"{API}/events",
         headers=auth(tk),
-        json={"venue_id": venue_id, "nombre": nombre, "categoria": "circo"},
+        json={"venue_id": venue_id, "nombre": nombre},
     )
     assert r.status_code == 201, r.text
     return r.json()
@@ -130,7 +142,12 @@ async def test_solo_psd_crea_recintos(cliente_http, usuarios):
     r = await cliente_http.post(
         f"{API}/venues",
         headers=auth(token_de(usuarios["org_a"])),
-        json={"nombre": "Teatro Pirata", "ciudad": "CDMX"},
+        json={
+            "nombre": "Teatro Pirata",
+            "estado_geo": "Ciudad de México",
+            "ciudad": "Ciudad de México",
+            "coordenadas": "19.4326, -99.1332",
+        },
     )
     assert r.status_code == 403
 
@@ -140,7 +157,11 @@ async def test_las_coordenadas_son_obligatorias(cliente_http, usuarios):
     r = await cliente_http.post(
         f"{API}/venues",
         headers=auth(token_de(usuarios["admin"])),
-        json={"nombre": "Teatro Sin Mapa", "ciudad": "CDMX"},
+        json={
+            "nombre": "Teatro Sin Mapa",
+            "estado_geo": "Ciudad de México",
+            "ciudad": "Ciudad de México",
+        },
     )
     assert r.status_code == 422
     assert r.json()["error"]["detalle"]["campos"][0]["campo"] == "coordenadas"
@@ -158,11 +179,13 @@ async def test_cualquier_usuario_lista_recintos(cliente_http, usuarios):
 async def test_filtro_por_ciudad(cliente_http, usuarios):
     tk = token_de(usuarios["admin"])
     await crear_recinto(cliente_http, tk, "Teatro CDMX")
+    await asegurar_ciudad(cliente_http, tk, "Nuevo León", "Monterrey")
     r = await cliente_http.post(
         f"{API}/venues",
         headers=auth(tk),
         json={
             "nombre": "Teatro Monterrey",
+            "estado_geo": "Nuevo León",
             "ciudad": "Monterrey",
             "coordenadas": "25.6866, -100.3161",
         },

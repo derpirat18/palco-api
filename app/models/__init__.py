@@ -18,6 +18,7 @@ from app.models.catalog import (
     Venue,
     Zone,
 )
+from app.models.catalogos import CategoriaDeEvento, Ciudad
 from app.models.commerce import (
     DiscountCode,
     DiscountRedemption,
@@ -45,6 +46,8 @@ __all__ = [
     "Alerta",
     "AsignacionDeAcceso",
     "Base",
+    "CategoriaDeEvento",
+    "Ciudad",
     "Client",
     "Consent",
     "ConsultaDeDatos",

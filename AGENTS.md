@@ -82,6 +82,21 @@ ningún QR, ni siquiera el de la liga: la liga es la llave de los boletos.
 - **Ubicación del recinto** (BOL9): las coordenadas son obligatorias al dar
   de alta un recinto; «Cómo llegar» abre ese punto en Google Maps.
 
+## Catálogos: ciudades y categorías (GEO1, CAT1)
+
+- **Ciudades** (`cities`, `app/core/geo_mx.py`, `app/services/catalogos.py`):
+  un recinto solo se da de alta con estado y ciudad de la lista, y se guarda
+  como está escrita ahí (`ciudad_del_catalogo`). La lista viene sembrada con
+  las ciudades principales de los 32 estados; solo PSD agrega las que falten.
+  No se repiten aunque cambien mayúsculas, acentos o espacios (`clave()`).
+- **Categorías de eventos** (`event_categories`): un evento solo lleva una
+  categoría aprobada (`categoria_del_catalogo`). El organizador la solicita
+  desde su evento; PSD la aprueba (puede corregir cómo se escribe y se le
+  pone al evento desde el que se pidió) o la rechaza con motivo, que el
+  organizador ve. Lo que agrega PSD queda aprobado directo.
+- No se escriben ciudades ni categorías a mano en otro lado: siempre por
+  estas funciones, para que no vuelva «CDMX» / «Ciudad de México».
+
 ## Stack
 
 - Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, Pydantic v2
@@ -352,6 +367,10 @@ versión que sigue corriendo.
   entra por variables de entorno.
 - `requirements.lock` fija las versiones de la imagen. Una dependencia
   nueva va en `pyproject.toml` **y** se regenera el lock con Python 3.12.
+- Dependabot (`.github/dependabot.yml`, B15) propone cada semana las
+  actualizaciones de pip y cada mes las de Docker, GitHub Actions y
+  Terraform. Cada PR pasa por el CI normal; las de la zona crítica
+  (Stripe, SQLAlchemy, Redis) se revisan con calma antes de unirlas.
 
 ## Pruebas
 

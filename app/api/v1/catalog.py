@@ -43,6 +43,7 @@ from app.schemas.catalog import (
     ZonaResponse,
 )
 from app.services.catalog import CatalogService, ConflictoDeCatalogo, slugify
+from app.services.catalogos import categoria_del_catalogo, ciudad_del_catalogo
 from app.services.mapas_archivo import leer_archivo
 from app.services.medios import (
     MENSAJE_DE_TAMANO,
@@ -94,6 +95,9 @@ async def listar_recintos(
 )
 async def crear_recinto(datos: VenueCrear, db: DB) -> Venue:
     campos = datos.model_dump(exclude={"coordenadas"})
+    # GEO1: la ciudad y el estado como están en el catálogo.
+    ciudad = await ciudad_del_catalogo(db, datos.pais, datos.estado_geo, datos.ciudad)
+    campos.update(estado_geo=ciudad.estado, ciudad=ciudad.nombre)
     lat, lng = datos.coordenadas.split(",")
     recinto = Venue(**campos, lat=Decimal(lat), lng=Decimal(lng))
     db.add(recinto)
@@ -367,7 +371,8 @@ async def crear_evento(datos: EventoCrear, db: DB, usuario: UsuarioActual) -> Ev
         venue_id=datos.venue_id,
         nombre=datos.nombre,
         slug=slug,
-        categoria=datos.categoria,
+        # CAT1: solo una categoria aprobada del catalogo.
+        categoria=await categoria_del_catalogo(db, datos.categoria),
         descripcion=datos.descripcion,
         imagen_url=datos.imagen_url,
         destacado=datos.destacado,
@@ -406,6 +411,9 @@ async def actualizar_evento(
     verificar_acceso_cliente(usuario, evento.client_id, no_encontrado=EVENTO_NO_EXISTE)
 
     cambios = datos.model_dump(exclude_unset=True)
+    if "categoria" in cambios:
+        # CAT1: solo una categoria aprobada del catalogo (o ninguna).
+        cambios["categoria"] = await categoria_del_catalogo(db, cambios["categoria"])
 
     # El organizador sube y edita su evento; publicarlo o retirarlo lo hace
     # PSD despues de revisarlo (ADR 0021). Un precio o una fecha mal puestos

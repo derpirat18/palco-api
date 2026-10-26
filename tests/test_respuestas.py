@@ -25,12 +25,21 @@ async def test_respuesta_de_exito(cliente_http):
 
 
 async def test_acentos_viajan_en_utf8(cliente_http, usuarios):
+    from tests.test_catalog import asegurar_ciudad
+
     nombre = "Plaza México · Peña"
+    await asegurar_ciudad(
+        cliente_http,
+        token_de(usuarios["admin"]),
+        "Ciudad de México",
+        "Ciudad de México",
+    )
     r = await cliente_http.post(
         f"{API}/venues",
         headers=auth(token_de(usuarios["admin"])),
         json={
             "nombre": nombre,
+            "estado_geo": "Ciudad de México",
             "ciudad": "Ciudad de México",
             "coordenadas": "19.4326, -99.1332",
         },

@@ -107,6 +107,8 @@ def preparar(base: str) -> None:
                 "estado_geo": "CDMX",
                 "direccion": "Dirección de prueba 123",
                 "capacidad": 60,
+                # BOL9: obligatorias; el Zócalo de la Ciudad de México.
+                "coordenadas": "19.4326, -99.1332",
             },
         )
         mapa = pedir(

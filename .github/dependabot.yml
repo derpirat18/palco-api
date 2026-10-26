@@ -1,0 +1,33 @@
+# B15: revisión automática de librerías vulnerables.
+# GitHub avisa y abre una propuesta (pull request) cuando una librería de la
+# API, la imagen base de Docker, una acción de GitHub o un proveedor de
+# Terraform tiene una falla de seguridad conocida o una versión nueva. Nada
+# se instala solo: cada propuesta pasa por las pruebas y se acepta a mano.
+# No toca .github/workflows/ci.yml.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Mexico_City
+    open-pull-requests-limit: 5
+    groups:
+      menores:
+        update-types: [minor, patch]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: terraform
+    directories:
+      - /infra/entornos/sandbox
+      - /infra/entornos/produccion
+    schedule:
+      interval: monthly
