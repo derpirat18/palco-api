@@ -127,7 +127,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Armar la imagen (x86) para probarla
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -177,7 +177,7 @@ jobs:
       - uses: docker/setup-qemu-action@v3
 
       - name: Armar para ARM (Graviton) y x86
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
