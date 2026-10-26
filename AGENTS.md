@@ -94,6 +94,10 @@ ningún QR, ni siquiera el de la liga: la liga es la llave de los boletos.
   desde su evento; PSD la aprueba (puede corregir cómo se escribe y se le
   pone al evento desde el que se pidió) o la rechaza con motivo, que el
   organizador ve. Lo que agrega PSD queda aprobado directo.
+- PSD también quita y renombra (Panel → Catálogos): una categoría o ciudad
+  que se usa no se quita sin decir a cuál pasar sus eventos o recintos
+  (`quitar_categoria`, `quitar_ciudad`); renombrar una categoría corrige
+  todos sus eventos y no puede chocar con otra (para juntarlas, se quita una).
 - No se escriben ciudades ni categorías a mano en otro lado: siempre por
   estas funciones, para que no vuelva «CDMX» / «Ciudad de México».
 

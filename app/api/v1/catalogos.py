@@ -36,6 +36,20 @@ class AprobarRequest(BaseModel):
     nombre: Linea | None = Field(default=None, min_length=2, max_length=60)
 
 
+class RenombrarRequest(BaseModel):
+    nombre: Linea = Field(min_length=2, max_length=60)
+
+
+class QuitarCategoriaRequest(BaseModel):
+    # La categoría a la que se pasan sus eventos (si alguno la usa).
+    pasar_a: Linea | None = Field(default=None, max_length=60)
+
+
+class QuitarCiudadRequest(BaseModel):
+    # La ciudad a la que se pasan sus recintos (si alguno la usa).
+    pasar_a_id: int | None = None
+
+
 class RechazarRequest(BaseModel):
     motivo: Linea = Field(min_length=3, max_length=200)
 
@@ -49,6 +63,8 @@ class CategoriaResponse(BaseModel):
     para_evento_id: int | None
     # Quién la pidió (solo para PSD).
     solicitante: str | None = None
+    # Cuántos eventos la usan (solo las aprobadas, solo para PSD).
+    eventos: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -61,14 +77,21 @@ class CategoriasResponse(BaseModel):
 async def _categorias(db, usuario) -> CategoriasResponse:
     c = await cat.categorias(db, usuario)
     nombres = {}
+    usos: dict[str, int] | None = None
     if usuario.rol == RolUsuario.ADMIN_PSD:
+        usos = await cat.eventos_por_categoria(db)
         ids = {s.solicitada_por for s in c.solicitudes if s.solicitada_por}
         for uid in ids:
             u = await db.get(User, uid)
             if u:
                 nombres[uid] = u.nombre
     return CategoriasResponse(
-        aprobadas=[CategoriaResponse.model_validate(x) for x in c.aprobadas],
+        aprobadas=[
+            CategoriaResponse.model_validate(x).model_copy(
+                update={"eventos": None if usos is None else usos.get(x.nombre, 0)}
+            )
+            for x in c.aprobadas
+        ],
         solicitudes=[
             CategoriaResponse.model_validate(x).model_copy(
                 update={"solicitante": nombres.get(x.solicitada_por)}
@@ -90,6 +113,16 @@ async def agregar_ciudad(
 ) -> list[dict]:
     """PSD agrega una ciudad que no estaba (los recintos solo los da de alta PSD)."""
     await cat.agregar_ciudad(db, datos.pais, datos.estado, datos.nombre, usuario.id)
+    await db.commit()
+    return await cat.geo(db)
+
+
+@router.post("/ciudades/{ciudad_id}/quitar", dependencies=[solo_psd])
+async def quitar_ciudad(
+    ciudad_id: int, datos: QuitarCiudadRequest, db: DB, _: UsuarioActual
+) -> list[dict]:
+    """Quita una ciudad de la lista; sus recintos (si hay) pasan a otra."""
+    await cat.quitar_ciudad(db, ciudad_id, datos.pasar_a_id)
     await db.commit()
     return await cat.geo(db)
 
@@ -132,6 +165,34 @@ async def aprobar(
     categoria_id: int, datos: AprobarRequest, db: DB, usuario: UsuarioActual
 ) -> CategoriasResponse:
     await cat.aprobar_categoria(db, categoria_id, usuario.id, datos.nombre)
+    await db.commit()
+    return await _categorias(db, usuario)
+
+
+@router.patch(
+    "/categorias/{categoria_id}",
+    response_model=CategoriasResponse,
+    dependencies=[solo_psd],
+)
+async def renombrar(
+    categoria_id: int, datos: RenombrarRequest, db: DB, usuario: UsuarioActual
+) -> CategoriasResponse:
+    """Corrige cómo se escribe; se corrige también en todos sus eventos."""
+    await cat.renombrar_categoria(db, categoria_id, datos.nombre)
+    await db.commit()
+    return await _categorias(db, usuario)
+
+
+@router.post(
+    "/categorias/{categoria_id}/quitar",
+    response_model=CategoriasResponse,
+    dependencies=[solo_psd],
+)
+async def quitar_categoria(
+    categoria_id: int, datos: QuitarCategoriaRequest, db: DB, usuario: UsuarioActual
+) -> CategoriasResponse:
+    """Quita una categoría de la lista; sus eventos (si hay) pasan a otra."""
+    await cat.quitar_categoria(db, categoria_id, datos.pasar_a)
     await db.commit()
     return await _categorias(db, usuario)
 

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ErrorDeDominio, RecursoNoEncontrado
 from app.core.geo_mx import ESTADOS_MX, PAISES, clave, estado_canonico
 from app.models.base import RolUsuario
-from app.models.catalog import Event
+from app.models.catalog import Event, Venue
 from app.models.catalogos import CategoriaDeEvento, Ciudad
 from app.models.users import User
 
@@ -42,6 +42,7 @@ async def geo(db: AsyncSession) -> list[dict]:
     ciudades = (
         await db.scalars(select(Ciudad).order_by(Ciudad.estado, Ciudad.nombre))
     ).all()
+    usos = await recintos_por_ciudad(db)
     por_estado: dict[tuple[str, str], list[Ciudad]] = {}
     for c in ciudades:
         por_estado.setdefault((c.pais, c.estado), []).append(c)
@@ -53,7 +54,7 @@ async def geo(db: AsyncSession) -> list[dict]:
                 {
                     "nombre": estado,
                     "ciudades": [
-                        {"id": c.id, "nombre": c.nombre}
+                        {"id": c.id, "nombre": c.nombre, "recintos": usos.get(c.id, 0)}
                         for c in por_estado.get((codigo, estado), [])
                     ],
                 }
@@ -92,6 +93,52 @@ async def agregar_ciudad(
             {"campo": "nombre"},
         )
     return await db.get(Ciudad, nueva)
+
+
+async def recintos_por_ciudad(db: AsyncSession) -> dict[int, int]:
+    """Cuántos recintos usan cada ciudad del catálogo (por id de ciudad)."""
+    filas = await db.execute(
+        select(Ciudad.id, func.count(Venue.id))
+        .join(
+            Venue,
+            (Venue.pais == Ciudad.pais)
+            & (Venue.estado_geo == Ciudad.estado)
+            & (Venue.ciudad == Ciudad.nombre),
+        )
+        .group_by(Ciudad.id)
+    )
+    return dict(filas.all())
+
+
+async def quitar_ciudad(
+    db: AsyncSession, ciudad_id: int, pasar_a_id: int | None
+) -> int:
+    """Solo PSD. Si algún recinto la usa, se pasan a otra ciudad del catálogo.
+    Devuelve cuántos recintos se pasaron."""
+    c = await db.get(Ciudad, ciudad_id, with_for_update=True)
+    if c is None:
+        raise RecursoNoEncontrado("Esa ciudad ya no está en la lista.")
+    donde = (
+        (Venue.pais == c.pais)
+        & (Venue.estado_geo == c.estado)
+        & (Venue.ciudad == c.nombre)
+    )
+    usan = await db.scalar(select(func.count(Venue.id)).where(donde)) or 0
+    if usan:
+        destino = await db.get(Ciudad, pasar_a_id) if pasar_a_id else None
+        if destino is None or destino.id == c.id:
+            raise DatoFueraDeCatalogo(
+                f"{c.nombre} la usan {usan} recinto(s): escoge a qué ciudad pasarlos.",
+                {"campo": "pasar_a", "recintos": usan},
+            )
+        await db.execute(
+            update(Venue)
+            .where(donde)
+            .values(pais=destino.pais, estado_geo=destino.estado, ciudad=destino.nombre)
+        )
+    await db.delete(c)
+    await db.flush()
+    return usan
 
 
 async def ciudad_del_catalogo(
@@ -194,6 +241,86 @@ async def pedir_categoria(
     return nueva
 
 
+async def eventos_por_categoria(db: AsyncSession) -> dict[str, int]:
+    """Cuántos eventos usan cada categoría (por nombre)."""
+    filas = await db.execute(
+        select(Event.categoria, func.count(Event.id))
+        .where(Event.categoria.is_not(None))
+        .group_by(Event.categoria)
+    )
+    return dict(filas.all())
+
+
+async def _aprobada(db: AsyncSession, categoria_id: int) -> CategoriaDeEvento:
+    c = await db.get(CategoriaDeEvento, categoria_id, with_for_update=True)
+    if c is None or c.estado != APROBADA:
+        raise RecursoNoEncontrado("Esa categoría ya no está en la lista.")
+    return c
+
+
+async def _nombre_libre(
+    db: AsyncSession, nombre: str, propia_id: int | None
+) -> tuple[str, str]:
+    """El nombre limpio y su clave, si ninguna otra categoría lo tiene."""
+    nombre = _limpio(nombre)
+    k = clave(nombre)
+    otra = await db.scalar(
+        select(CategoriaDeEvento).where(
+            CategoriaDeEvento.clave == k, CategoriaDeEvento.id != propia_id
+        )
+    )
+    if otra is not None and otra.estado != RECHAZADA:
+        raise YaEnElCatalogo(
+            f"«{otra.nombre}» ya existe. Para juntarlas, quita una y pasa sus "
+            "eventos a la otra.",
+            {"campo": "nombre"},
+        )
+    if otra is not None:
+        # Una rechazada con ese nombre solo estorba: se borra.
+        await db.delete(otra)
+        await db.flush()
+    return nombre, k
+
+
+async def renombrar_categoria(db: AsyncSession, categoria_id: int, nombre: str) -> int:
+    """Solo PSD. Cambia cómo se escribe y se corrige en todos sus eventos.
+    Devuelve cuántos eventos cambiaron."""
+    c = await _aprobada(db, categoria_id)
+    anterior = c.nombre
+    c.nombre, c.clave = await _nombre_libre(db, nombre, c.id)
+    r = await db.execute(
+        update(Event).where(Event.categoria == anterior).values(categoria=c.nombre)
+    )
+    await db.flush()
+    return r.rowcount or 0
+
+
+async def quitar_categoria(
+    db: AsyncSession, categoria_id: int, pasar_a: str | None
+) -> int:
+    """Solo PSD. Si algún evento la usa, se pasan a otra categoría de la lista.
+    Devuelve cuántos eventos se pasaron."""
+    c = await _aprobada(db, categoria_id)
+    usan = (
+        await db.scalar(select(func.count(Event.id)).where(Event.categoria == c.nombre))
+        or 0
+    )
+    if usan:
+        destino = await categoria_del_catalogo(db, pasar_a) if pasar_a else None
+        if destino is None or destino == c.nombre:
+            raise DatoFueraDeCatalogo(
+                f"«{c.nombre}» la usan {usan} evento(s): escoge a qué categoría "
+                "pasarlos.",
+                {"campo": "pasar_a", "eventos": usan},
+            )
+        await db.execute(
+            update(Event).where(Event.categoria == c.nombre).values(categoria=destino)
+        )
+    await db.delete(c)
+    await db.flush()
+    return usan
+
+
 async def _solicitud(db: AsyncSession, categoria_id: int) -> CategoriaDeEvento:
     c = await db.get(CategoriaDeEvento, categoria_id, with_for_update=True)
     if c is None or c.estado != SOLICITADA:
@@ -208,8 +335,7 @@ async def aprobar_categoria(
     desde el que se pidió, si todavía no tiene categoría."""
     c = await _solicitud(db, categoria_id)
     if nombre:
-        c.nombre = _limpio(nombre)
-        c.clave = clave(c.nombre)
+        c.nombre, c.clave = await _nombre_libre(db, nombre, c.id)
     c.estado = APROBADA
     c.revisada_por = actor_id
     c.revisada_en = func.now()
