@@ -174,7 +174,7 @@ jobs:
 
       # Graviton (ARM) es lo que correra en AWS. Se arma emulado: tarda mas,
       # pero confirma que ninguna dependencia falta para esa arquitectura.
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
 
       - name: Armar para ARM (Graviton) y x86
         uses: docker/build-push-action@v6
