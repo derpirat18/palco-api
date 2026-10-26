@@ -118,9 +118,18 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 # Imagenes de los eventos en local (F7): sin bucket, la API las sirve. En
 # AWS las sirve CloudFront desde el bucket de medios.
 if settings.ENTORNO == "local" and not settings.MEDIOS_BUCKET:
+    import logging
     from pathlib import Path
 
     from fastapi.staticfiles import StaticFiles
 
-    Path(settings.MEDIOS_DIR).mkdir(parents=True, exist_ok=True)
-    app.mount("/medios", StaticFiles(directory=settings.MEDIOS_DIR), name="medios")
+    # En la imagen el código es de solo lectura (así se prueba en CI): si no
+    # se puede crear la carpeta, la API arranca igual, sin servir imágenes.
+    try:
+        Path(settings.MEDIOS_DIR).mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logging.getLogger(__name__).warning(
+            "Sin carpeta de medios locales (%s): no se sirven imágenes.", e
+        )
+    else:
+        app.mount("/medios", StaticFiles(directory=settings.MEDIOS_DIR), name="medios")
