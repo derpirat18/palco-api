@@ -101,6 +101,23 @@ ningún QR, ni siquiera el de la liga: la liga es la llave de los boletos.
 - No se escriben ciudades ni categorías a mano en otro lado: siempre por
   estas funciones, para que no vuelva «CDMX» / «Ciudad de México».
 
+## Cuentas de comprador (R1)
+
+- Se entra con un **código de 6 dígitos al correo** (`app/services/cuenta.py`,
+  `app/api/v1/cuenta.py`, todo bajo `/publico/cuenta`). Sin contraseñas.
+  Vence en 10 min, 5 intentos, un solo uso; tope de 3 códigos por correo
+  cada 15 min y 10 al día, límite por IP y verificación humana para pedirlo.
+  Los códigos viven solo en Redis (HMAC con `SECRET_KEY`): nunca en la base
+  ni en la bandeja.
+- El token del comprador es `tipo: comprador` (30 días) y lleva
+  `sesion_version`: subirla cierra todas sus sesiones. No sirve en el panel
+  ni el del panel aquí (`decodificar_token` exige `tipo: access`).
+- Un correo, un comprador: al entrar ve todas las compras con su correo,
+  también las de invitado, y los pases que le dieron. Comprar sigue sin
+  cuenta; el checkout no lee la sesión (el front solo prellena).
+- Cambiar de correo se confirma con código al nuevo; si el nuevo ya existe,
+  se juntan (`cambiar_correo` mueve toda columna que apunta a customers.id).
+
 ## Stack
 
 - Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, Pydantic v2

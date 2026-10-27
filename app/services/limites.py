@@ -50,6 +50,9 @@ POR_MINUTO = {
     "reenviar": 6,
     # Pasar o recuperar un boleto (BOL6). Ademas hay tope por compra.
     "pasar": 10,
+    # Cuenta del comprador (R1): pedir y escribir codigos. Ademas hay tope
+    # por correo en app/services/cuenta.py.
+    "cuenta": 10,
 }
 APARTADOS_VIGENTES_POR_IP = 4
 ORDENES_PENDIENTES_POR_CORREO = 2

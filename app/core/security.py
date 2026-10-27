@@ -98,3 +98,37 @@ def decodificar_token(token: str) -> dict[str, Any]:
         raise TokenInvalido("Tu sesión terminó. Vuelve a iniciar sesión.")
 
     return payload
+
+
+# --------------------------------------------------------------------------
+# Comprador (R1)
+# --------------------------------------------------------------------------
+
+# Un comprador entra con un codigo a su correo y se queda adentro en ese
+# equipo. Si quiere salir de todos, se sube su `sesion_version`.
+SESION_COMPRADOR = timedelta(days=30)
+TIPO_COMPRADOR = "comprador"
+
+
+def crear_token_comprador(customer_uuid: str, version: int) -> str:
+    """Token del comprador. Otro `tipo` que el del personal: uno no sirve
+    donde va el otro."""
+    ahora = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "sub": customer_uuid,
+        "v": version,
+        "iat": ahora,
+        "exp": ahora + SESION_COMPRADOR,
+        "tipo": TIPO_COMPRADOR,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITMO)
+
+
+def decodificar_token_comprador(token: str) -> dict[str, Any]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITMO])
+    except JWTError as exc:
+        raise TokenInvalido("Tu sesión terminó. Vuelve a entrar.") from exc
+    if payload.get("tipo") != TIPO_COMPRADOR:
+        raise TokenInvalido("Tu sesión terminó. Vuelve a entrar.")
+    return payload

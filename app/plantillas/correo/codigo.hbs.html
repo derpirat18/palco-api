@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+<meta name="color-scheme" content="light">
+<title>{{asunto}}</title>
+<style>
+  body{margin:0;padding:0;width:100%!important;background:#f3f3f7}
+  table{border-collapse:collapse}
+  img{border:0;display:block}
+  a{color:#554c7a}
+  @media only screen and (max-width:620px){.wrap{width:100%!important}.px{padding-left:20px!important;padding-right:20px!important}}
+</style>
+</head>
+<body style="margin:0;padding:0;background:#f3f3f7;">
+<div style="display:none;max-height:0;overflow:hidden;">Vence en {{minutos}} minutos. No lo compartas con nadie.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f3f7;">
+  <tr><td align="center" style="padding:24px 12px;">
+  <table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;font-family:'Outfit',Arial,Helvetica,sans-serif;color:#1f1d2b;">
+    <tr><td class="px" style="background:#554c7a;padding:24px 40px;">
+      <a href="{{inicio_url}}"><img src="{{assets_url}}/logo-psd-blanco.png" width="92" height="30" alt="{{marca}}" style="width:92px;height:auto;"></a>
+    </td></tr>
+    <tr><td class="px" style="padding:36px 40px 8px;">
+      <h1 style="margin:0;font-size:22px;line-height:28px;font-weight:600;">{{#if cambiar}}Tu código para cambiar tu correo{{else}}Tu código para entrar{{/if}}</h1>
+      <p style="margin:8px 0 0;font-size:15px;line-height:22px;color:#6b6980;">Escríbelo en la página donde lo pediste. Vence en {{minutos}} minutos.</p>
+    </td></tr>
+    <tr><td class="px" align="center" style="padding:20px 40px 28px;">
+      <div style="display:inline-block;padding:16px 28px;border-radius:14px;background:#f3f3f7;font-size:34px;line-height:40px;font-weight:700;letter-spacing:10px;font-family:'Courier New',monospace;color:#1f1d2b;">{{codigo}}</div>
+    </td></tr>
+    <tr><td class="px" style="padding:0 40px 32px;font-size:14px;line-height:20px;color:#6b6980;">
+      <p style="margin:0;">Si no lo pediste tú, ignora este correo: nadie puede entrar sin este código. No lo compartas con nadie; {{marca}} nunca te lo va a pedir por teléfono ni por mensaje.</p>
+      {{#if soporte_email}}<p style="margin:12px 0 0;">¿Necesitas ayuda? Escríbenos a <a href="mailto:{{soporte_email}}">{{soporte_email}}</a>.</p>{{/if}}
+    </td></tr>
+    <tr><td class="px" style="background:#1f1d2b;padding:20px 40px;font-size:12px;line-height:18px;color:#c9c7d6;">
+      <a href="{{aviso_privacidad}}" style="color:#ffffff;">Aviso de privacidad</a><br>© {{anio}} {{marca}}.
+    </td></tr>
+  </table>
+  </td></tr>
+</table>
+</body>
+</html>

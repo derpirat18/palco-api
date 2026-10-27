@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     LargeBinary,
     Numeric,
     String,
@@ -52,6 +53,10 @@ class Customer(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
         DateTime(timezone=True)
     )
     cuenta_activada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # R1: sube para cerrar todas sus sesiones (los tokens llevan este numero).
+    sesion_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     # El consentimiento no vive aqui: un si/no no dice cuando, desde donde,
     # para que ni con que aviso. Ver Consent.
 

@@ -142,8 +142,10 @@ async def test_el_correo_lleva_a_mis_boletos_y_no_trae_qr(
         assert "Pagado el " in parte
         # La tarjeta espera autorizacion (zona critica).
         assert "Pagado con" not in parte
-        # Sin cuentas de comprador todavia (R1): ni invitacion ni "Mi cuenta".
-        assert "Crear mi cuenta" not in parte and "Mi cuenta" not in parte
+        # R1: compro como invitado, asi que se le invita a entrar con su
+        # correo; "Mi cuenta" sale hasta que entra.
+        assert "Mi cuenta" not in parte
+    assert "Crear mi cuenta" in m.html and "https://palco.mx/entrar" in m.html
 
 
 async def test_el_correo_dice_con_que_tarjeta_se_pago(

@@ -171,10 +171,10 @@ def datos_del_correo(
         "ver_en_navegador_url": f"{front}/orden/{orden.uuid}/correo",
         "folio": orden.folio,
         "num_boletos": len(boletos),
-        # Hoy toda compra es como invitado; la invitacion a crear cuenta se
-        # enciende cuando existan las cuentas de comprador (R1).
-        "es_invitado": True,
-        "cuentas": False,
+        # R1: quien todavia no entra a su cuenta ve la invitacion a hacerlo
+        # con este mismo correo; quien ya entro, el enlace a Mi cuenta.
+        "es_invitado": comprador.es_invitado,
+        "cuentas": True,
         "comprador": {
             "nombre": orden.nombre_snap or comprador.nombre,
             "email": orden.email_snap or comprador.email,
@@ -195,7 +195,7 @@ def datos_del_correo(
         },
         "recinto": {"nombre": recinto.nombre, "ciudad": recinto.ciudad},
         "boletos_url": enlace_a_boletos(orden.uuid),
-        "crear_cuenta_url": "",
+        "crear_cuenta_url": f"{front}/entrar",
         "boletos": boletos,
         "pago": pago,
         "redes": settings.REDES_SOCIALES,

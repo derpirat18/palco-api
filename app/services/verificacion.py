@@ -155,3 +155,17 @@ async def verificar_humano(
         await redis.set(_clave(hold_id), "1", ex=vida)
     except RedisError:
         log.warning("No se pudo marcar el apartado como verificado.")
+
+
+async def verificar_persona(
+    verificador: Verificador, request: Request, token: str | None
+) -> None:
+    """Para acciones sueltas (pedir un codigo para entrar, R1): el token se
+    revisa cada vez, sin marca en Redis."""
+    if not activa():
+        return
+    token = (token or "").strip()
+    if not token or len(token) > LARGO_MAXIMO:
+        raise VerificacionRequerida(MENSAJE)
+    if await verificador.verificar(token, ip_de(request)) is Resultado.RECHAZADO:
+        raise VerificacionRequerida(MENSAJE)
