@@ -32,10 +32,16 @@ class CheckoutRequest(BaseModel):
     utm_campaign: Linea | None = Field(default=None, max_length=160)
     utm_content: Linea | None = Field(default=None, max_length=160)
     canal: Linea | None = Field(default=None, max_length=40)
+    # Tipos de boleto (TB): por butaca (seat_id), adulto, nino o mayor. La
+    # que no viene es de adulto.
+    tipos: dict[int, Literal["adulto", "nino", "mayor"]] = Field(
+        default_factory=dict, max_length=50
+    )
 
 
 class PartidaResponse(BaseModel):
     zona: str
+    # Con tipo de boleto (TB) distinto de adulto, va al final: "Fila A · 2 · Niño".
     asiento: str
     # Precio al publico de la butaca (con IVA) y cuanto de el es IVA.
     precio: Decimal

@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
     true,
 )
@@ -124,6 +125,12 @@ class Zone(Base, PKMixin):
     nombre: Mapped[str] = mapped_column(String(80), nullable=False)
     color: Mapped[str | None] = mapped_column(String(9))
     orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Entrada general (EG): sin lugar numerado. Sus "butacas" son cupos
+    # (fila G, numero 1..N) que el sistema asigna; el comprador escoge
+    # cuantos, no cuales, y su boleto dice "Acceso general".
+    general: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
 
     mapa: Mapped["SeatMap"] = relationship(back_populates="zonas")
     asientos: Mapped[list["Seat"]] = relationship(back_populates="zona")
@@ -192,6 +199,23 @@ class Event(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
         Boolean, nullable=False, default=True, server_default=true()
     )
 
+    # --- Taquilla (TQ) ---
+    # Hasta cuantos minutos despues de empezar cada funcion vende la taquilla.
+    taquilla_minutos_despues: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=60, server_default="60"
+    )
+    # El texto corto del medio fisico (pulsera, gafete), editable; sale
+    # tambien en el recibo impreso.
+    texto_legal_medio: Mapped[str | None] = mapped_column(Text)
+    # Quien paga el medio fisico: entra en la liquidacion.
+    medio_lo_paga: Mapped[str | None] = mapped_column(String(12))
+
+    # --- Tipos de boleto (TB) ---
+    # Edades que el organizador anuncia para el precio de nino y el de
+    # adulto mayor. Son informativas: en la puerta se revisan a ojo.
+    edad_nino_hasta: Mapped[int | None] = mapped_column(Integer)
+    edad_mayor_desde: Mapped[int | None] = mapped_column(Integer)
+
     cliente: Mapped["Client"] = relationship(back_populates="eventos")
     funciones: Mapped[list["Performance"]] = relationship(back_populates="evento")
 
@@ -200,6 +224,21 @@ class Event(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
             "estado IN ('borrador','publicado','archivado')", name="estado_valido"
         ),
         CheckConstraint("iva_pct >= 0 AND iva_pct <= 100", name="iva_rango"),
+        CheckConstraint(
+            "taquilla_minutos_despues BETWEEN 0 AND 600", name="taquilla_minutos_rango"
+        ),
+        CheckConstraint(
+            "medio_lo_paga IS NULL OR medio_lo_paga IN ('psd','organizador')",
+            name="medio_lo_paga_valido",
+        ),
+        CheckConstraint(
+            "edad_nino_hasta IS NULL OR edad_nino_hasta BETWEEN 1 AND 17",
+            name="edad_nino_rango",
+        ),
+        CheckConstraint(
+            "edad_mayor_desde IS NULL OR edad_mayor_desde BETWEEN 50 AND 99",
+            name="edad_mayor_rango",
+        ),
         Index("ix_events_estado_destacado", "estado", "destacado"),
     )
 
@@ -280,6 +319,10 @@ class PerformancePrice(Base, PKMixin):
         BigInteger, ForeignKey("zones.id", ondelete="RESTRICT"), nullable=False
     )
     precio: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    # Tipos de boleto (TB). `precio` es el de adulto. Sin precio, ese tipo
+    # no se vende en la zona. Se capturan igual que `precio` (con o sin IVA).
+    precio_nino: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    precio_mayor: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     funcion: Mapped["Performance"] = relationship(back_populates="precios")
@@ -287,4 +330,11 @@ class PerformancePrice(Base, PKMixin):
     __table_args__ = (
         UniqueConstraint("performance_id", "zone_id", name="performance_id_zone_id"),
         CheckConstraint("precio >= 0", name="precio_no_negativo"),
+        CheckConstraint(
+            "precio_nino IS NULL OR precio_nino >= 0", name="precio_nino_no_negativo"
+        ),
+        CheckConstraint(
+            "precio_mayor IS NULL OR precio_mayor >= 0",
+            name="precio_mayor_no_negativo",
+        ),
     )

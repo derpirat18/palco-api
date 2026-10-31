@@ -46,7 +46,7 @@ from app.core.errors import (
     RecursoNoEncontrado,
 )
 from app.models.base import EstadoAsiento
-from app.models.catalog import Client, Event, Performance, Seat
+from app.models.catalog import Client, Event, Performance, Seat, Zone
 from app.models.inventory import InventoryMove, PerformanceSeat
 from app.services.holds import HoldService
 from app.services.inventory import ConflictoDeInventario
@@ -254,6 +254,69 @@ class ApartadoService:
             segundos_restantes=segundos,
         )
 
+    async def apartar_general(
+        self, performance_id: int, zone_id: int, cantidad: int, hold_id: str
+    ) -> EstadoDelApartado:
+        """Entrada general (EG): aparta `cantidad` cupos mas de una zona
+        general. El sistema escoge cuales (al azar, para que dos compradores
+        a la vez casi nunca choquen) y luego es un apartado como cualquiera:
+        Redis, Postgres y el tope por compra. Si otro gano un cupo en el
+        mismo instante, lo intenta con otros.
+        """
+        zona = await self.db.get(Zone, zone_id)
+        funcion = await self.db.get(Performance, performance_id)
+        if (
+            zona is None
+            or funcion is None
+            or not zona.general
+            or zona.seat_map_id != funcion.seat_map_id
+        ):
+            raise ConflictoDeInventario(
+                "Esa zona no es de entrada general en esta función.",
+                {"zone_id": zone_id},
+            )
+        if not 1 <= cantidad <= settings.MAX_ASIENTOS_POR_ORDEN:
+            raise LimiteDeAsientos(
+                f"Puedes comprar hasta {settings.MAX_ASIENTOS_POR_ORDEN} boletos."
+            )
+        ultimo: Exception | None = None
+        for _ in range(3):
+            ahora = await self._ahora()
+            libres = list(
+                (
+                    await self.db.scalars(
+                        select(PerformanceSeat.seat_id)
+                        .join(Seat, Seat.id == PerformanceSeat.seat_id)
+                        .where(
+                            PerformanceSeat.performance_id == performance_id,
+                            Seat.zone_id == zone_id,
+                            or_(
+                                PerformanceSeat.estado == DISPONIBLE,
+                                and_(
+                                    PerformanceSeat.estado == APARTADO,
+                                    PerformanceSeat.hold_expira_en <= ahora,
+                                    PerformanceSeat.hold_id != hold_id,
+                                ),
+                            ),
+                        )
+                        .order_by(func.random())
+                        .limit(cantidad)
+                    )
+                ).all()
+            )
+            if len(libres) < cantidad:
+                raise AsientoNoDisponible(
+                    "Ya no quedan suficientes boletos en esa zona."
+                    if libres
+                    else "Esa zona se agotó.",
+                    {"zone_id": zone_id, "quedan": len(libres)},
+                )
+            try:
+                return await self.apartar(performance_id, libres, hold_id)
+            except AsientoNoDisponible as exc:
+                ultimo = exc
+        raise ultimo  # type: ignore[misc]
+
     async def liberar(
         self,
         performance_id: int,
@@ -390,11 +453,27 @@ class ApartadoService:
             ).all()
         )
         seleccion = set(seat_ids) | ya_suyas
+        # Entrada general (EG): sin lugares numerados no hay butacas sueltas
+        # ni lugares separados; esos cupos no cuentan para estas reglas.
         filas_tocadas = (
             await self.db.execute(
-                select(Seat.zone_id, Seat.fila).where(Seat.id.in_(seleccion)).distinct()
+                select(Seat.zone_id, Seat.fila)
+                .join(Zone, Zone.id == Seat.zone_id)
+                .where(Seat.id.in_(seleccion), Zone.general.is_(False))
+                .distinct()
             )
         ).all()
+        if not filas_tocadas:
+            return RevisionDeSeleccion(suelta=None, separados=False)
+        seleccion = set(
+            (
+                await self.db.scalars(
+                    select(Seat.id)
+                    .join(Zone, Zone.id == Seat.zone_id)
+                    .where(Seat.id.in_(seleccion), Zone.general.is_(False))
+                )
+            ).all()
+        )
         filas = (
             await self.db.execute(
                 select(

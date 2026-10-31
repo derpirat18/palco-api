@@ -46,11 +46,20 @@ class CortesiaResponse(BaseModel):
     lugares: list[LugarDeCortesiaResponse]
 
 
+class TarifaResponse(BaseModel):
+    tipo: Literal["nino", "mayor"]
+    nombre: str
+    precio: Decimal
+
+
 class ZonaDelPanelResponse(BaseModel):
     id: int
     nombre: str
     color: str | None
     precio_desde: Decimal | None
+    # Tipos de boleto (TB) ademas de adulto, con su precio al publico.
+    tarifas: list[TarifaResponse] = []
+    general: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -66,6 +75,7 @@ class ButacaDelPanelResponse(BaseModel):
     estado: Literal["libre", "ocupada"]
     situacion: str
     precio: Decimal
+    solo_adulto: bool = False
 
     model_config = {"from_attributes": True}
 

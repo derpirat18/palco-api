@@ -36,6 +36,7 @@ from app.models.catalog import (
     Zone,
 )
 from app.models.inventory import PerformanceSeat
+from app.services.tipos import TIPOS, nombre_con_edad, tarifas_de
 from app.services.venta import iva_de, motivo_no_se_vende, visible_al_publico
 
 # Por debajo de esta fraccion de butacas libres se anuncia "ultimos lugares".
@@ -106,6 +107,14 @@ class ZonaDelMapa:
     color: str | None
     # La butaca libre mas barata de la zona; None si no queda ninguna.
     precio_desde: Decimal | None
+    # Tipos de boleto (TB) que vende la zona ademas de adulto, con su
+    # precio al publico: [{"tipo": "nino", "nombre": "Niño (hasta 12
+    # años)", "precio": 250}]. Vacio: solo adulto.
+    tarifas: tuple[dict, ...] = ()
+    # Entrada general (EG): sin lugares numerados; el comprador escoge
+    # cuantos. Sus cupos no vienen en `butacas`, solo cuantos quedan.
+    general: bool = False
+    disponibles: int | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +129,8 @@ class ButacaDelMapa:
     # bloqueada: al comprador no le sirve y a la competencia si.
     estado: str
     precio: Decimal
+    # Precio puesto a mano para esta butaca: se vende solo como adulto.
+    solo_adulto: bool = False
 
 
 @dataclass(frozen=True)
@@ -254,7 +265,7 @@ class PublicoService:
             or fila[0].inicia_en <= ahora
         ):
             raise RecursoNoEncontrado(FUNCION_NO_EXISTE)
-        funcion, _, _, mapa = fila
+        funcion, evento, _, mapa = fila
 
         inventario = await self._inventario([funcion.id])
         publica = self._funcion_publica(
@@ -284,6 +295,7 @@ class PublicoService:
                     Seat.pos_y,
                     PerformanceSeat.precio_final,
                     libre,
+                    PerformanceSeat.precio_personalizado,
                 )
                 .join(PerformanceSeat, PerformanceSeat.seat_id == Seat.id)
                 .where(
@@ -293,6 +305,13 @@ class PublicoService:
                 .order_by(Seat.zone_id, Seat.fila, Seat.id)
             )
         ).all()
+        generales = {z.id for z in zonas if z.general}
+        quedan: dict[int, int] = {}
+        precio_general: dict[int, Decimal] = {}
+        for _, zid, *_resto, precio, es_libre, _p in filas:
+            if zid in generales and es_libre:
+                quedan[zid] = quedan.get(zid, 0) + 1
+                precio_general[zid] = min(precio, precio_general.get(zid, precio))
         butacas = tuple(
             ButacaDelMapa(
                 id=sid,
@@ -303,8 +322,10 @@ class PublicoService:
                 y=y,
                 estado="libre" if es_libre else "ocupada",
                 precio=precio,
+                solo_adulto=personalizado,
             )
-            for sid, zid, f, n, x, y, precio, es_libre in filas
+            for sid, zid, f, n, x, y, precio, es_libre, personalizado in filas
+            if zid not in generales
         )
         desde: dict[int, Decimal] = {}
         for b in butacas:
@@ -313,14 +334,75 @@ class PublicoService:
             ):
                 desde[b.zona_id] = b.precio
 
+        tarifas = await tarifas_de(self.db, funcion.id, iva_de(evento))
+
+        def de_zona(zone_id: int) -> tuple[dict, ...]:
+            return tuple(
+                {"tipo": t, "nombre": nombre_con_edad(t, evento), "precio": p}
+                for t, p in sorted(
+                    tarifas.de_zona(zone_id).items(), key=lambda x: TIPOS.index(x[0])
+                )
+            )
+
         return MapaPublico(
             funcion=publica,
             viewport=mapa.viewport or {},
             zonas=tuple(
-                ZonaDelMapa(z.id, z.nombre, z.color, desde.get(z.id)) for z in zonas
+                ZonaDelMapa(
+                    z.id,
+                    z.nombre,
+                    z.color,
+                    precio_general.get(z.id) if z.general else desde.get(z.id),
+                    de_zona(z.id),
+                    general=z.general,
+                    disponibles=quedan.get(z.id, 0) if z.general else None,
+                )
+                for z in zonas
             ),
             butacas=butacas,
         )
+
+    async def generales_del_apartado(
+        self, performance_id: int, hold_id: str
+    ) -> list[ButacaDelMapa]:
+        """Entrada general (EG): los cupos de este apartado, que el mapa no
+        trae (no se dibujan), para que el comprador vea lo que eligio."""
+        filas = (
+            await self.db.execute(
+                select(
+                    Seat.id,
+                    Seat.zone_id,
+                    Seat.fila,
+                    Seat.numero,
+                    PerformanceSeat.precio_final,
+                    PerformanceSeat.precio_personalizado,
+                )
+                .join(PerformanceSeat, PerformanceSeat.seat_id == Seat.id)
+                .join(Zone, Zone.id == Seat.zone_id)
+                .where(
+                    PerformanceSeat.performance_id == performance_id,
+                    PerformanceSeat.hold_id == hold_id,
+                    PerformanceSeat.estado == EstadoAsiento.APARTADO.value,
+                    PerformanceSeat.hold_expira_en > func.now(),
+                    Zone.general.is_(True),
+                )
+                .order_by(Seat.zone_id, Seat.id)
+            )
+        ).all()
+        return [
+            ButacaDelMapa(
+                id=sid,
+                zona_id=zid,
+                fila=f,
+                numero=n,
+                x=Decimal(0),
+                y=Decimal(0),
+                estado="tuya",
+                precio=precio,
+                solo_adulto=propio,
+            )
+            for sid, zid, f, n, precio, propio in filas
+        ]
 
     async def butacas_del_apartado(self, performance_id: int, hold_id: str) -> set[int]:
         """Las butacas que este apartado tiene vigentes, para marcarlas "tuya"."""

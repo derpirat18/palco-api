@@ -16,6 +16,14 @@ class ApartarRequest(BaseModel):
     seat_ids: list[int] = Field(min_length=1, max_length=50)
 
 
+class ApartarGeneralRequest(BaseModel):
+    """Entrada general (EG): cuantos cupos mas de una zona sin lugares."""
+
+    hold_id: UUID4
+    zone_id: int
+    cantidad: int = Field(ge=1, le=50)
+
+
 class ButacaApartadaResponse(BaseModel):
     seat_id: int
     performance_seat_id: int

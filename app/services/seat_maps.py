@@ -160,6 +160,8 @@ class ZonaGenerada:
     color: str | None
     orden: int
     butacas: list[ButacaGenerada] = field(default_factory=list)
+    # Entrada general (EG): cupos sin lugar numerado.
+    general: bool = False
 
 
 @dataclass
@@ -411,3 +413,58 @@ def calcular_viewport(mapa: MapaGenerado, margen: int = 40) -> dict:
         "width": math.ceil(max(xs)) + margen,
         "height": math.ceil(max(ys)) + margen,
     }
+
+
+# --------------------------------------------------------------------------
+# Entrada general (EG)
+# --------------------------------------------------------------------------
+
+FILA_GENERAL = "G"
+MAX_CUPO_GENERAL = 20000
+
+
+class ZonaGeneralSpec(BaseModel):
+    nombre: str = Field(min_length=1, max_length=80)
+    capacidad: int = Field(ge=1, le=MAX_CUPO_GENERAL)
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class MapaGeneralSpec(BaseModel):
+    """Un mapa sin butacas numeradas: cada zona es un cupo (General, VIP)."""
+
+    nombre: str = Field(min_length=1, max_length=120)
+    zonas: list[ZonaGeneralSpec] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def _nombres_unicos(self):
+        nombres = [z.nombre.strip().lower() for z in self.zonas]
+        if len(set(nombres)) != len(nombres):
+            raise ValueError("Cada zona necesita un nombre distinto.")
+        return self
+
+
+def mapa_general(spec: MapaGeneralSpec) -> MapaGenerado:
+    """Cada zona con su cupo: N lugares sin posicion (no se dibujan)."""
+    return MapaGenerado(
+        nombre=spec.nombre.strip(),
+        viewport={"general": True},
+        zonas=[
+            ZonaGenerada(
+                nombre=z.nombre.strip(),
+                color=z.color,
+                orden=i,
+                general=True,
+                butacas=[
+                    ButacaGenerada(
+                        zona=z.nombre.strip(),
+                        fila=FILA_GENERAL,
+                        numero=str(n),
+                        pos_x=Decimal(0),
+                        pos_y=Decimal(0),
+                    )
+                    for n in range(1, z.capacidad + 1)
+                ],
+            )
+            for i, z in enumerate(spec.zonas)
+        ],
+    )

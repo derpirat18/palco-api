@@ -53,10 +53,12 @@ from app.services.medios import (
 )
 from app.services.seat_maps import (
     EspecificacionDeMapa,
+    MapaGeneralSpec,
     MapaInvalido,
     calcular_viewport,
     generar_mapa,
     importar_mapa_csv,
+    mapa_general,
 )
 
 router = APIRouter()
@@ -157,6 +159,32 @@ async def generar_mapa_de_butacas(
     await db.commit()
     await db.refresh(seat_map)
 
+    total, vendibles = await servicio.contar_butacas(seat_map.id)
+    return SeatMapResponse(
+        **{
+            c: getattr(seat_map, c)
+            for c in ("id", "venue_id", "nombre", "viewport", "activo")
+        },
+        total_butacas=total,
+        total_vendibles=vendibles,
+    )
+
+
+@router.post(
+    "/venues/{venue_id}/seat-maps/general",
+    response_model=SeatMapResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[solo_psd],
+    tags=["catalogo"],
+)
+async def crear_mapa_general(
+    venue_id: int, spec: MapaGeneralSpec, db: DB
+) -> SeatMapResponse:
+    """Entrada general (EG): zonas con cupo y sin lugares numerados."""
+    servicio = CatalogService(db)
+    seat_map = await servicio.guardar_mapa(venue_id, mapa_general(spec))
+    await db.commit()
+    await db.refresh(seat_map)
     total, vendibles = await servicio.contar_butacas(seat_map.id)
     return SeatMapResponse(
         **{
@@ -378,6 +406,8 @@ async def crear_evento(datos: EventoCrear, db: DB, usuario: UsuarioActual) -> Ev
         destacado=datos.destacado,
         iva_pct=datos.iva_pct,
         precios_incluyen_iva=datos.precios_incluyen_iva,
+        edad_nino_hasta=datos.edad_nino_hasta,
+        edad_mayor_desde=datos.edad_mayor_desde,
         estado=EstadoEvento.BORRADOR,
     )
     db.add(evento)
@@ -611,6 +641,11 @@ async def fijar_precios(
 
     # Los importes viajan como Decimal de extremo a extremo: convertirlos
     # a float aqui introduciria error de redondeo en el precio base.
-    precios = await servicio.fijar_precios(performance_id, datos.precios)
+    tipos = (
+        {z: (t.nino, t.mayor) for z, t in datos.tipos.items()}
+        if datos.tipos is not None
+        else None
+    )
+    precios = await servicio.fijar_precios(performance_id, datos.precios, tipos)
     await db.commit()
     return [PrecioResponse.model_validate(p) for p in precios]

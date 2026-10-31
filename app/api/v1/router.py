@@ -14,6 +14,7 @@ from app.api.v1 import (
     health,
     inventory,
     publico,
+    taquilla,
     usuarios,
 )
 
@@ -32,3 +33,4 @@ api_router.include_router(publico.router)
 api_router.include_router(usuarios.router)
 api_router.include_router(acceso.router)
 api_router.include_router(alertas.router)
+api_router.include_router(taquilla.router)

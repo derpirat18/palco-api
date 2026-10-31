@@ -36,6 +36,7 @@ from app.models.inventory import InventoryMove, PerformanceSeat
 from app.models.outbox import OutboxEvent
 from app.models.sales import Cortesia, Customer, Order, OrderItem, Ticket
 from app.services.checkout import CERO, nuevo_codigo_de_boleto, nuevo_folio
+from app.services.tipos import asiento_de
 from app.services.venta import iva_de
 
 CANAL = "cortesia"
@@ -204,7 +205,7 @@ class CortesiaService:
                     order_id=orden.id,
                     performance_seat_id=ps.id,
                     zona_snap=zona.nombre,
-                    asiento_snap=f"Fila {seat.fila} · {seat.numero}",
+                    asiento_snap=asiento_de(seat.fila, seat.numero, zona.general),
                     precio_unitario=CERO,
                     iva=CERO,
                     descuento=CERO,

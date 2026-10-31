@@ -159,6 +159,8 @@ revisan con lupa:
   `app/services/webhooks.py`: cobro y emisión (ADR 0010)
 - `app/services/barrido.py`: cierra órdenes, suelta apartados y termina
   capturas sin que nadie lo vea (ADR 0011)
+- `app/services/taquilla.py`: venta en el lugar con dinero en mano;
+  vende, corrige y cuadra cajas sobre el mismo inventario
 - Cualquier cosa que toque cobros o emisión de boletos
 
 Nunca debilitar ni marcar como `skip` las pruebas de
@@ -300,6 +302,36 @@ Detalle en ADR 0010. Lo que no se rompe:
 - Una cortesía es una orden de $0 con `canal = 'cortesia'` sobre el
   mismo inventario (ADR 0018). Nace pagada **y con `capturada_en`**: una
   orden pagada sin captura es una que el barrido intenta cobrar.
+- Una venta de taquilla (TQ) es una orden con `canal = 'taquilla'` (o
+  `'cortesia'` si es cortesía), pagada y capturada al momento, con su
+  fila en `box_office_sales` atada a una caja (`box_office_registers`).
+  Solo vende el cajero de la caja abierta. El correo es obligatorio:
+  siempre salen los boletos con QR. Si entra ya con pulsera o gafete,
+  sus boletos quedan `usado` con un escaneo "Entró por taquilla". No hay
+  cancelaciones del cliente: solo el jefe corrige un error del cajero,
+  el mismo día y con la caja sin contar, y los lugares regresan a la
+  venta. El corte es a ciegas: el cajero no ve lo esperado hasta que el
+  jefe cierra.
+- Taquilla sin internet (TQ fase 3): la reserva de una caja son butacas
+  `apartado` con `hold_id = caja-<uuid>` que vencen al cerrar la venta en
+  linea y se sueltan al contar la caja. Solo esa caja las vende. Sin red,
+  el equipo vende de esa reserva con medio fisico y sube la venta despues
+  con la misma `clave` (`sin_red`, `vendida_en`).
+- Entrada general (EG): una zona con `general = true` es un cupo. Sus
+  lugares (fila G, 1..N, sin posicion) los escoge el sistema
+  (`ApartadoService.apartar_general`, al azar) y luego es un apartado
+  normal: Redis, Postgres, tope por compra. No aplican butacas sueltas ni
+  lugares juntos. El mapa publico no trae sus cupos, solo `disponibles`;
+  el boleto dice "Acceso general" (`asiento_de`). Mapas:
+  `POST /venues/{id}/seat-maps/general`.
+- Tipos de boleto (TB, `app/services/tipos.py`): adulto es
+  `precio_final` de la butaca; nino y adulto mayor salen de
+  `performance_prices.precio_nino` / `precio_mayor` de la zona, con el
+  mismo IVA. Sin ese precio, o con precio puesto a mano, solo adulto; se
+  rechaza, nunca se cobra adulto a escondidas. La partida guarda `tipo` y,
+  si no es adulto, lo lleva en `asiento_snap` ("Fila A · 2 · Niño") para
+  que salga en el boleto y en la puerta. En linea y en taquilla cobran lo
+  mismo.
 - El barrido (`.\make.ps1 barrido`) termina lo que queda a medias:
   órdenes vencidas, apartados vencidos, capturas pendientes y avisos de
   capturas atrasadas. Nunca cierra una orden sin cancelar antes en

@@ -107,6 +107,8 @@ class ZonaResponse(BaseModel):
     nombre: str
     color: str | None
     orden: int
+    # Entrada general (EG): cupo sin lugares numerados.
+    general: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -213,6 +215,9 @@ class EventoCrear(BaseModel):
     # Lo decide el organizador con su contador (ADR 0013).
     iva_pct: TasaIva = Decimal("16.00")
     precios_incluyen_iva: bool = True
+    # Tipos de boleto (TB): las edades que se anuncian con cada precio.
+    edad_nino_hasta: int | None = Field(default=None, ge=1, le=17)
+    edad_mayor_desde: int | None = Field(default=None, ge=50, le=99)
 
 
 class EventoActualizar(BaseModel):
@@ -224,6 +229,8 @@ class EventoActualizar(BaseModel):
     estado: str | None = None
     iva_pct: TasaIva | None = None
     precios_incluyen_iva: bool | None = None
+    edad_nino_hasta: int | None = Field(default=None, ge=1, le=17)
+    edad_mayor_desde: int | None = Field(default=None, ge=50, le=99)
     # La direccion de la pagina (psdevents.com/<slug>). Se normaliza en el
     # servidor; el organizador solo la cambia mientras es borrador (URL1).
     slug: Linea | None = Field(default=None, max_length=160)
@@ -243,6 +250,8 @@ class EventoResponse(BaseModel):
     destacado: bool
     iva_pct: Decimal
     precios_incluyen_iva: bool
+    edad_nino_hasta: int | None = None
+    edad_mayor_desde: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -276,16 +285,29 @@ Precio = Annotated[
 ]
 
 
+class TarifasDeZona(BaseModel):
+    """Tipos de boleto (TB): precio de nino y de adulto mayor de una zona.
+    Sin precio, ese tipo no se vende en la zona."""
+
+    nino: Precio | None = None
+    mayor: Precio | None = None
+
+
 class PreciosRequest(BaseModel):
-    """Precio base por zona. La llave es el id de la zona."""
+    """Precio base (adulto) por zona. La llave es el id de la zona."""
 
     precios: dict[int, Precio] = Field(min_length=1)
+    # Si no viene, los precios de nino y adulto mayor no se tocan. Si viene,
+    # una zona que no aparece queda sin ellos.
+    tipos: dict[int, TarifasDeZona] | None = None
 
 
 class PrecioResponse(BaseModel):
     id: int
     zone_id: int
     precio: Decimal
+    precio_nino: Decimal | None = None
+    precio_mayor: Decimal | None = None
     activo: bool
 
     model_config = {"from_attributes": True}

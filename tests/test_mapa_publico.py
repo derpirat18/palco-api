@@ -86,6 +86,8 @@ async def test_el_mapa_completo_con_precios(api, esc):
         "y",
         "estado",
         "precio",
+        # Tipos de boleto (TB): con precio puesto a mano, solo adulto.
+        "solo_adulto",
     }
     assert all(b["estado"] == "libre" for b in cuerpo["butacas"])
     precios = {b["precio"] for b in cuerpo["butacas"]}

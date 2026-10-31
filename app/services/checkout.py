@@ -70,6 +70,13 @@ from app.services.pasarela import (
     IntentoDePago,
     Pasarela,
 )
+from app.services.tipos import (
+    ADULTO,
+    TipoNoDisponible,
+    asiento_con_tipo,
+    asiento_de,
+    tarifas_de,
+)
 from app.services.venta import CENTAVO, iva_de
 
 log = logging.getLogger("palco.checkout")
@@ -206,11 +213,16 @@ class CheckoutService:
         hold_id: str,
         comprador: DatosDelComprador,
         atribucion: Atribucion | None = None,
+        tipos: dict[int, str] | None = None,
     ) -> OrdenIniciada:
         """Convierte el apartado en una orden esperando pago.
 
+        `tipos` dice, por butaca (seat_id), si es de adulto, nino o adulto
+        mayor (TB); la que no viene es de adulto.
+
         Repetirla con lo mismo devuelve la misma orden. Si cambio la
-        seleccion o el correo, la orden anterior se cancela y se abre otra.
+        seleccion, los tipos o el correo, la orden anterior se cancela y se
+        abre otra.
         """
         if not comprador.acepta_aviso:
             raise ConsentimientoInvalido(
@@ -234,6 +246,16 @@ class CheckoutService:
             ) from exc
         seat_ids = [b.seat_id for b in apartado.butacas]
         ps_ids = sorted(b.performance_seat_id for b in apartado.butacas)
+        ajenas = set(tipos or {}) - set(seat_ids)
+        if ajenas:
+            raise TipoNoDisponible(
+                "Hay tipos de boleto para lugares que no están en tu selección.",
+                {"seat_ids": sorted(ajenas)},
+            )
+        tipo_de = {
+            b.performance_seat_id: (tipos or {}).get(b.seat_id, ADULTO)
+            for b in apartado.butacas
+        }
 
         revision = await self.apartados.revisar_seleccion(
             performance_id, seat_ids, hold_id, ahora
@@ -257,7 +279,9 @@ class CheckoutService:
             .with_for_update()
         )
         if previa is not None:
-            reanudada = await self._reanudar_si_es_la_misma(previa, ps_ids, email)
+            reanudada = await self._reanudar_si_es_la_misma(
+                previa, ps_ids, email, tipo_de
+            )
             if reanudada is not None:
                 return reanudada
 
@@ -270,19 +294,35 @@ class CheckoutService:
         # El precio de la butaca ya trae el IVA (ADR 0013); aqui solo se
         # desglosa y se congela la tasa, para facturar sin recalcular.
         iva = iva_de(evento)
-        detalle = await self._detalle_de_butacas(ps_ids)
-        partidas = [
-            OrderItem(
-                performance_seat_id=ps_id,
-                zona_snap=zona,
-                asiento_snap=f"Fila {fila} · {numero}",
-                precio_unitario=precio,
-                iva=iva.iva_contenido(precio),
-                descuento=CERO,
-                importe=precio,
+        tarifas = await tarifas_de(self.db, performance_id, iva)
+        partidas = []
+        for (
+            ps_id,
+            final,
+            zona,
+            fila,
+            numero,
+            zone_id,
+            propio,
+            general,
+        ) in await self._detalle_de_butacas(ps_ids):
+            asiento = asiento_de(fila, numero, general)
+            tipo = tipo_de[ps_id]
+            # Precio de nino o adulto mayor de la zona (TB); adulto, el de
+            # la butaca.
+            precio = tarifas.precio(tipo, zone_id, final, propio, f"{zona} {asiento}")
+            partidas.append(
+                OrderItem(
+                    performance_seat_id=ps_id,
+                    zona_snap=zona,
+                    asiento_snap=asiento_con_tipo(asiento, tipo),
+                    tipo=tipo,
+                    precio_unitario=precio,
+                    iva=iva.iva_contenido(precio),
+                    descuento=CERO,
+                    importe=precio,
+                )
             )
-            for ps_id, precio, zona, fila, numero in detalle
-        ]
         # Como en una factura: subtotal sin IVA + IVA = total. El total es la
         # suma exacta de los precios al publico, que es lo que cobra Stripe;
         # el subtotal sale de restarle el IVA desglosado partida por partida.
@@ -580,7 +620,7 @@ class CheckoutService:
             )
 
     async def _reanudar_si_es_la_misma(
-        self, previa: Order, ps_ids: list[int], email: str
+        self, previa: Order, ps_ids: list[int], email: str, tipo_de: dict[int, str]
     ) -> OrdenIniciada | None:
         """Doble clic o recarga: misma seleccion y mismo correo, misma orden.
 
@@ -599,6 +639,7 @@ class CheckoutService:
         misma = (
             sorted(p.performance_seat_id for p in partidas) == ps_ids
             and correo == email
+            and all(tipo_de.get(p.performance_seat_id) == p.tipo for p in partidas)
         )
         if misma and intento is not None and intento.estado != CANCELADO:
             return OrdenIniciada(previa, partidas, intento.client_secret or "")
@@ -731,6 +772,9 @@ class CheckoutService:
                         Zone.nombre,
                         Seat.fila,
                         Seat.numero,
+                        Zone.id,
+                        PerformanceSeat.precio_personalizado,
+                        Zone.general,
                     )
                     .join(Seat, Seat.id == PerformanceSeat.seat_id)
                     .join(Zone, Zone.id == Seat.zone_id)

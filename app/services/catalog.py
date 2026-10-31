@@ -111,6 +111,7 @@ class CatalogService:
                 nombre=zona_gen.nombre,
                 color=zona_gen.color,
                 orden=zona_gen.orden,
+                general=zona_gen.general,
             )
             self.db.add(zona)
             await self.db.flush()
@@ -349,7 +350,10 @@ class CatalogService:
         )
 
     async def fijar_precios(
-        self, performance_id: int, precios_por_zona: dict[int, Decimal]
+        self,
+        performance_id: int,
+        precios_por_zona: dict[int, Decimal],
+        tipos: dict[int, tuple[Decimal | None, Decimal | None]] | None = None,
     ) -> list[PerformancePrice]:
         """Define el precio base de cada zona para una funcion.
 
@@ -366,7 +370,7 @@ class CatalogService:
                 )
             ).all()
         )
-        ajenas = set(precios_por_zona) - zonas_validas
+        ajenas = (set(precios_por_zona) | set(tipos or {})) - zonas_validas
         if ajenas:
             raise ConflictoDeCatalogo(
                 "Hay zonas que no pertenecen al mapa de esta función.",
@@ -395,6 +399,8 @@ class CatalogService:
             else:
                 fila.precio = precio
                 fila.activo = True
+            if tipos is not None:
+                fila.precio_nino, fila.precio_mayor = tipos.get(zone_id, (None, None))
             resultado.append(fila)
 
         # Las zonas que ya no traen precio quedan inactivas, no se borran:

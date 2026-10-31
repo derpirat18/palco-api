@@ -11,7 +11,11 @@ from fastapi import APIRouter, Depends, Header, Query, Request, status
 from pydantic import UUID4
 
 from app.api.deps import DB
-from app.schemas.apartados import ApartadoResponse, ApartarRequest
+from app.schemas.apartados import (
+    ApartadoResponse,
+    ApartarGeneralRequest,
+    ApartarRequest,
+)
 from app.services.apartados import ApartadoService
 from app.services.holds import HoldService, hold_service
 from app.services.limites import (
@@ -67,6 +71,35 @@ async def apartar(
     await registrar_apartado(redis, request, datos.hold_id.hex)
     estado = await ApartadoService(db, holds).apartar(
         performance_id, datos.seat_ids, datos.hold_id.hex
+    )
+    await db.commit()
+    return ApartadoResponse.model_validate(estado)
+
+
+@router.post(
+    "/{performance_id}/apartados/general",
+    response_model=ApartadoResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[limite("apartar")],
+)
+async def apartar_general(
+    performance_id: int,
+    datos: ApartarGeneralRequest,
+    db: DB,
+    holds: Holds,
+    request: Request,
+    redis: RedisLimites,
+    verificador: Verificacion,
+    turno: Annotated[str | None, Header(alias="X-Palco-Turno")] = None,
+    verificacion: Annotated[str | None, Header(alias="X-Palco-Verificacion")] = None,
+) -> ApartadoResponse:
+    """Entrada general (EG): aparta cupos de una zona sin lugares numerados.
+    Las mismas guardas que apartar butacas (turno, verificacion, tope)."""
+    await verificar_turno(db, redis, performance_id, datos.hold_id.hex, turno)
+    await verificar_humano(redis, verificador, request, datos.hold_id.hex, verificacion)
+    await registrar_apartado(redis, request, datos.hold_id.hex)
+    estado = await ApartadoService(db, holds).apartar_general(
+        performance_id, datos.zone_id, datos.cantidad, datos.hold_id.hex
     )
     await db.commit()
     return ApartadoResponse.model_validate(estado)

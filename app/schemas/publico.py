@@ -111,11 +111,22 @@ class CarteleraResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TarifaResponse(BaseModel):
+    tipo: Literal["nino", "mayor"]
+    nombre: str
+    precio: Decimal
+
+
 class ZonaDelMapaResponse(BaseModel):
     id: int
     nombre: str
     color: str | None
     precio_desde: Decimal | None
+    # Tipos de boleto (TB) ademas de adulto. Vacio: solo adulto.
+    tarifas: list[TarifaResponse] = []
+    # Entrada general (EG): sin lugares numerados, se escoge cuantos.
+    general: bool = False
+    disponibles: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -131,8 +142,10 @@ class ButacaDelMapaResponse(BaseModel):
     # bloqueada o cortesia, sin decir cual. tuya: la tiene el apartado que
     # el front mando en `apartado`.
     estado: Literal["libre", "ocupada", "tuya"]
-    # Precio final con IVA, el mismo que se cobra al apartar.
+    # Precio final con IVA, el mismo que se cobra al apartar. Es el de adulto.
     precio: Decimal
+    # Con precio puesto a mano: solo se vende como adulto.
+    solo_adulto: bool = False
 
     model_config = {"from_attributes": True}
 

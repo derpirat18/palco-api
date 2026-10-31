@@ -265,6 +265,12 @@ class OrderItem(Base, PKMixin):
     )
     importe: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
 
+    # Tipo de boleto (TB): adulto, nino o mayor. Si no es adulto, tambien
+    # va dentro de `asiento_snap` para que se vea en el boleto y en la puerta.
+    tipo: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="adulto", server_default="adulto"
+    )
+
     # Se pone en true al cancelar o reembolsar. Es lo que libera la butaca
     # para el indice unico parcial de abajo.
     anulado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -277,6 +283,7 @@ class OrderItem(Base, PKMixin):
             "importe = precio_unitario - descuento", name="importe_es_el_precio"
         ),
         CheckConstraint("iva >= 0 AND iva <= importe", name="iva_valido"),
+        CheckConstraint("tipo IN ('adulto','nino','mayor')", name="tipo_valido"),
         # Capa 3 de la garantia: ni un bug de aplicacion puede producir dos
         # partidas vivas sobre la misma butaca. El indice parcial permite
         # revender una butaca cuya orden se cancelo.

@@ -23,6 +23,7 @@ from app.schemas.boletos import (
     RecintoDelBoletoResponse,
 )
 from app.schemas.publico import (
+    ButacaDelMapaResponse,
     CarteleraResponse,
     ConfiguracionPublicaResponse,
     CorreoEnElNavegadorResponse,
@@ -192,6 +193,14 @@ async def mapa_de_funcion(
         for b in cuerpo["butacas"]:
             if b["id"] in mias:
                 b["estado"] = "tuya"
+        # Entrada general (EG): sus cupos no vienen en el mapa; se agregan.
+        if any(z.get("general") for z in cuerpo["zonas"]):
+            cuerpo["butacas"] = cuerpo["butacas"] + [
+                ButacaDelMapaResponse.model_validate(b).model_dump(mode="json")
+                for b in await servicio.generales_del_apartado(
+                    performance_id, apartado.hex
+                )
+            ]
     return cuerpo
 
 

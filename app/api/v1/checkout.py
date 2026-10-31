@@ -116,6 +116,7 @@ async def iniciar_checkout(
             utm_content=datos.utm_content,
             canal=datos.canal,
         ),
+        tipos=dict(datos.tipos),
     )
     await db.commit()
     return CheckoutResponse(

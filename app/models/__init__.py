@@ -39,6 +39,7 @@ from app.models.sales import (
     Ticket,
     Transfer,
 )
+from app.models.taquilla import CajaDeTaquilla, PersonalDeTaquilla, VentaDeTaquilla
 from app.models.users import User
 
 __all__ = [
@@ -46,6 +47,7 @@ __all__ = [
     "Alerta",
     "AsignacionDeAcceso",
     "Base",
+    "CajaDeTaquilla",
     "CategoriaDeEvento",
     "Ciudad",
     "Client",
@@ -66,6 +68,7 @@ __all__ = [
     "Performance",
     "PerformancePrice",
     "PerformanceSeat",
+    "PersonalDeTaquilla",
     "Scan",
     "Seat",
     "SeatMap",
@@ -74,6 +77,7 @@ __all__ = [
     "Ticket",
     "Transfer",
     "User",
+    "VentaDeTaquilla",
     "Venue",
     "Zone",
 ]
