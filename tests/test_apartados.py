@@ -311,7 +311,8 @@ async def test_api_avisa_que_los_lugares_no_van_juntos(api, db, clientes):
     assert r.status_code == 409
     assert r.json()["error"]["codigo"] == "lugares_separados"
     assert r.json()["error"]["mensaje"] == (
-        "No dejes lugares vacíos. Elige lugares consecutivos en la misma fila."
+        "No dejes lugares vacíos entre tus boletos. "
+        "Elige lugares juntos en la misma fila."
     )
 
 

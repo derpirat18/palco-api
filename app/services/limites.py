@@ -140,8 +140,8 @@ def limite(grupo: str):
             if n == tope + 1:
                 log.warning("Limite %s rebasado por una IP.", grupo)
             raise DemasiadasSolicitudes(
-                "Recibimos demasiadas solicitudes desde tu conexión. "
-                "Espera un minuto e intenta de nuevo.",
+                "Recibimos muchas solicitudes seguidas. "
+                "Espera un momento e intenta de nuevo.",
                 ttl,
             )
 

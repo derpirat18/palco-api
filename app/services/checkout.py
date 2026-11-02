@@ -240,8 +240,8 @@ class CheckoutService:
             apartado = await self.apartados.consultar(performance_id, hold_id)
         except RecursoNoEncontrado as exc:
             raise ApartadoExpirado(
-                "Se acabó el tiempo para completar tu compra y liberamos tus "
-                "lugares. Puedes volver a elegirlos.",
+                "El tiempo para completar tu compra terminó y liberamos tus "
+                "lugares. Puedes elegirlos de nuevo.",
                 {"performance_id": performance_id},
             ) from exc
         seat_ids = [b.seat_id for b in apartado.butacas]
@@ -697,8 +697,8 @@ class CheckoutService:
             performance_id, seat_ids, hold_id, ttl=ttl
         ):
             raise ApartadoExpirado(
-                "Se acabó el tiempo para completar tu compra y liberamos tus "
-                "lugares. Puedes volver a elegirlos.",
+                "El tiempo para completar tu compra terminó y liberamos tus "
+                "lugares. Puedes elegirlos de nuevo.",
                 {"performance_id": performance_id},
             )
 
@@ -726,8 +726,8 @@ class CheckoutService:
         )
         if expira is None:
             raise ApartadoExpirado(
-                "Se acabó el tiempo para completar tu compra y liberamos tus "
-                "lugares. Puedes volver a elegirlos.",
+                "El tiempo para completar tu compra terminó y liberamos tus "
+                "lugares. Puedes elegirlos de nuevo.",
                 {"performance_id": performance_id},
             )
         return expira

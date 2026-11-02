@@ -68,7 +68,7 @@ async def test_rebasar_el_limite_da_429_con_retry_after(api):
     assert r.status_code == 429
     error = r.json()["error"]
     assert error["codigo"] == "demasiadas_solicitudes"
-    assert "Espera un minuto" in error["mensaje"]
+    assert "Espera un momento" in error["mensaje"]
     assert 1 <= int(r.headers["retry-after"]) <= 60
     assert error["detalle"]["reintentar_en_segundos"] == int(r.headers["retry-after"])
 

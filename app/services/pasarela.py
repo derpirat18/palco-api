@@ -262,8 +262,8 @@ class StripePasarela:
             if actual.estado == COBRADO:
                 return actual
             raise CobroRechazado(
-                "Tu banco no autorizó el pago. No se hizo ningún cargo; puedes "
-                "intentar con otra tarjeta.",
+                "No pudimos procesar tu pago y no se generó tu compra. Revisa los "
+                "datos de tu tarjeta o intenta con otra; tus lugares siguen apartados.",
                 {"estado": actual.estado},
             ) from exc
         return _intento(pi)

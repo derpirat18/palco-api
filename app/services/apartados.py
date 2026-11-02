@@ -79,7 +79,9 @@ KILL = EstadoAsiento.KILL.value
 
 # Lugares separados: un hueco dentro de la fila, o lugares en otra zona o
 # fila (una compra va toda junta, ADR 0020).
-_CON_HUECOS = "No dejes lugares vacíos. Elige lugares consecutivos en la misma fila."
+_CON_HUECOS = (
+    "No dejes lugares vacíos entre tus boletos. Elige lugares juntos en la misma fila."
+)
 _OTRA_FILA = (
     "En una compra, todos los lugares van en la misma zona y fila. Para "
     "lugares en otra zona o fila, termina esta compra y haz otra."
