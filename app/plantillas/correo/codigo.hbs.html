@@ -8,33 +8,35 @@
 <meta name="color-scheme" content="light">
 <title>{{asunto}}</title>
 <style>
-  body{margin:0;padding:0;width:100%!important;background:#f3f3f7}
+  body{margin:0;padding:0;width:100%!important;background:#F6F8FF}
   table{border-collapse:collapse}
   img{border:0;display:block}
-  a{color:#554c7a}
+  a{color:#6D3BE0}
   @media only screen and (max-width:620px){.wrap{width:100%!important}.px{padding-left:20px!important;padding-right:20px!important}}
 </style>
 </head>
-<body style="margin:0;padding:0;background:#f3f3f7;">
+<body style="margin:0;padding:0;background:#F6F8FF;">
 <div style="display:none;max-height:0;overflow:hidden;">Vence en {{minutos}} minutos. No lo compartas con nadie.</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f3f7;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F8FF;">
   <tr><td align="center" style="padding:24px 12px;">
-  <table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;font-family:'Outfit',Arial,Helvetica,sans-serif;color:#1f1d2b;">
-    <tr><td class="px" style="background:#554c7a;padding:24px 40px;">
+  <table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;font-family:Inter,Arial,Helvetica,sans-serif;color:#080B1C;">
+    <tr><td style="height:3px;line-height:3px;font-size:0;background:#7938E8;background-image:linear-gradient(90deg,#5265FF 0%,#7938E8 35%,#EA48C4 70%,#25D5F4 100%);">&nbsp;</td></tr>
+    <tr><td class="px" style="background:#080B1C;background-image:linear-gradient(90deg,#080B1C 0%,#141A42 45%,#3B2A8F 80%,#5A2A8A 100%);padding:24px 40px;">
       <a href="{{inicio_url}}"><img src="{{assets_url}}/logo-psd-blanco.png" width="92" height="30" alt="{{marca}}" style="width:92px;height:auto;"></a>
     </td></tr>
     <tr><td class="px" style="padding:36px 40px 8px;">
       <h1 style="margin:0;font-size:22px;line-height:28px;font-weight:600;">{{#if cambiar}}Tu código para cambiar tu correo{{else}}Tu código para entrar{{/if}}</h1>
-      <p style="margin:8px 0 0;font-size:15px;line-height:22px;color:#6b6980;">Escríbelo en la página donde lo pediste. Vence en {{minutos}} minutos.</p>
+      <p style="margin:8px 0 0;font-size:15px;line-height:22px;color:#565C75;">Escríbelo en la página donde lo pediste. Vence en {{minutos}} minutos.</p>
     </td></tr>
     <tr><td class="px" align="center" style="padding:20px 40px 28px;">
-      <div style="display:inline-block;padding:16px 28px;border-radius:14px;background:#f3f3f7;font-size:34px;line-height:40px;font-weight:700;letter-spacing:10px;font-family:'Courier New',monospace;color:#1f1d2b;">{{codigo}}</div>
+      <div style="display:inline-block;padding:16px 28px;border-radius:14px;background:#EEF0FA;font-size:34px;line-height:40px;font-weight:700;letter-spacing:10px;font-family:'Courier New',monospace;color:#080B1C;">{{codigo}}</div>
     </td></tr>
-    <tr><td class="px" style="padding:0 40px 32px;font-size:14px;line-height:20px;color:#6b6980;">
+    <tr><td class="px" style="padding:0 40px 32px;font-size:14px;line-height:20px;color:#565C75;">
       <p style="margin:0;">Si no lo pediste tú, ignora este correo: nadie puede entrar sin este código. No lo compartas con nadie; {{marca}} nunca te lo va a pedir por teléfono ni por mensaje.</p>
       {{#if soporte_email}}<p style="margin:12px 0 0;">¿Necesitas ayuda? Escríbenos a <a href="mailto:{{soporte_email}}">{{soporte_email}}</a>.</p>{{/if}}
     </td></tr>
-    <tr><td class="px" style="background:#1f1d2b;padding:20px 40px;font-size:12px;line-height:18px;color:#c9c7d6;">
+    <tr><td style="height:3px;line-height:3px;font-size:0;background:#7938E8;background-image:linear-gradient(90deg,#5265FF 0%,#7938E8 35%,#EA48C4 70%,#25D5F4 100%);">&nbsp;</td></tr>
+    <tr><td class="px" style="background:#080B1C;background-image:linear-gradient(90deg,#080B1C 0%,#141A42 45%,#3B2A8F 80%,#5A2A8A 100%);padding:20px 40px;font-size:12px;line-height:18px;color:#B8BCD0;">
       <a href="{{aviso_privacidad}}" style="color:#ffffff;">Aviso de privacidad</a><br>© {{anio}} {{marca}}.
     </td></tr>
   </table>

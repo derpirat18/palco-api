@@ -295,6 +295,10 @@ Detalle en ADR 0010. Lo que no se rompe:
   nuestra. Las llaves de prueba de Cloudflare nunca van en producción.
 - Toda ruta pública nueva lleva su `limite("grupo")` (ADR 0016). Una
   ruta sin límite es la puerta que un bot va a encontrar.
+- Correos (`app/plantillas/correo/*.hbs.html`): mismos colores que el sitio
+  (diseño de Nadia): banda oscura con degradado, línea de color arriba de la
+  tarjeta y del pie, botón en degradado (con color sólido de respaldo para
+  Outlook) y letra Inter con Arial de respaldo. No se cargan fuentes de Google.
 - Ningún correo sale desde una petición ni dentro del cobro. Lo manda
   la bandeja (`.\make.ps1 bandeja`, ADR 0015) a partir de
   `outbox_events`, con reintentos. Un tipo nuevo de aviso se agrega como
