@@ -15,6 +15,7 @@ Lo que importa:
 """
 
 from datetime import timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -25,6 +26,7 @@ from app.models.catalog import Performance
 from app.models.inventory import PerformanceSeat
 from app.models.outbox import OutboxEvent
 from app.models.sales import Consent, Cortesia, Order, OrderItem, Scan, Ticket
+from app.models.taquilla import VentaDeTaquilla
 from tests.test_apartados import fila, funcion_a_la_venta, poner_estado
 from tests.test_catalog import API, auth, token_de
 from tests.test_correo import CarteroFalso, bandeja
@@ -509,7 +511,9 @@ async def test_inventario_no_se_pierde(cliente_http, db, usuarios, esc, caja):
 # --------------------------------------------------------------------------
 
 
-async def reservar(cliente_http, usuarios, caja, esc, quien="acceso", **kw):
+async def reservar(cliente_http, usuarios, caja, esc, quien=None, **kw):
+    # Cantidad o zona distintas a la configuracion solo las escoge el jefe.
+    quien = quien or ("org_a" if kw else "acceso")
     return await cliente_http.post(
         f"{TQ}/cajas/{caja}/reserva",
         json={"performance_id": esc["performance_id"], **kw},
@@ -664,3 +668,225 @@ async def test_otra_caja_no_vende_la_reserva(cliente_http, db, usuarios, esc, ca
     assert reservado in libres
     r = await vender(cliente_http, usuarios, caja, venta(esc, [reservado]))
     assert r.status_code == 201, r.text
+
+
+# --------------------------------------------------------------------------
+# Configuracion (2 nov): lo que tenia duda queda editable
+# - Comision de PSD sobre la taquilla, quien se queda el efectivo y de quien
+#   es la terminal: solo PSD; cada venta guarda lo que decian. Sin comision
+#   propia, la del organizador en linea.
+# - Pie del recibo, formas de pago, lugares por venta, reserva sin internet y
+#   diferencia del corte: el organizador o PSD.
+# - Una venta sin internet no se rechaza al subirla por un cambio posterior.
+# --------------------------------------------------------------------------
+
+
+async def configurar(cliente_http, usuarios, esc, quien="org_a", **datos):
+    return await cliente_http.patch(
+        f"{TQ}/eventos/{esc['event_id']}/config",
+        json=datos,
+        headers=de(usuarios, quien),
+    )
+
+
+async def test_valores_de_inicio(cliente_http, usuarios, esc):
+    r = await cliente_http.get(
+        f"{TQ}/eventos/{esc['event_id']}", headers=de(usuarios, "org_a")
+    )
+    d = r.json()
+    assert d["comision_pct"] is None and Decimal(d["comision_en_linea"]) == 10
+    assert (d["efectivo_lo_tiene"], d["terminal_de"]) == ("organizador", "organizador")
+    assert d["pie_recibo"] is None and d["pie_por_omision"] == "Organiza: Circo Uno"
+    assert d["formas_pago"] == ["efectivo", "terminal", "cortesia"]
+    assert (d["max_lugares"], d["reserva_cantidad"], d["reserva_zona_id"]) == (
+        20,
+        10,
+        None,
+    )
+    assert Decimal(d["tolerancia_corte"]) == 0
+    assert {z["nombre"] for z in d["zonas"]} == {"Luneta", "Balcon"}
+    assert d["es_psd"] is False
+
+
+async def test_comision_efectivo_y_terminal_solo_psd(
+    cliente_http, db, usuarios, esc, caja
+):
+    r = await configurar(cliente_http, usuarios, esc, comision_pct="5")
+    assert r.status_code == 403
+    r = await configurar(cliente_http, usuarios, esc, efectivo_lo_tiene="psd")
+    assert r.status_code == 403
+    r = await configurar(
+        cliente_http,
+        usuarios,
+        esc,
+        quien="admin",
+        comision_pct="4.5",
+        efectivo_lo_tiene="psd",
+        terminal_de="psd",
+    )
+    assert r.status_code == 200, r.text
+    assert Decimal(r.json()["comision_pct"]) == Decimal("4.5")
+    assert r.json()["es_psd"] is True
+
+    # El cajero no ve la comision.
+    r = await cliente_http.get(
+        f"{TQ}/eventos/{esc['event_id']}", headers=de(usuarios, "acceso")
+    )
+    assert r.json()["comision_pct"] is None and r.json()["comision_en_linea"] is None
+
+    a, b, c = esc["seat_ids"][:3]
+    r = await vender(cliente_http, usuarios, caja, venta(esc, [a]))
+    assert r.status_code == 201, r.text
+    efectivo = r.json()["folio"]
+    r = await vender(
+        cliente_http,
+        usuarios,
+        caja,
+        venta(esc, [b], forma="terminal", autorizacion="123456"),
+    )
+    terminal = r.json()["folio"]
+
+    # PSD regresa la comision a la del organizador: las ventas ya hechas no
+    # cambian.
+    r = await configurar(cliente_http, usuarios, esc, quien="admin", comision_pct=None)
+    assert r.json()["comision_pct"] is None
+    r = await vender(cliente_http, usuarios, caja, venta(esc, [c]))
+    despues = r.json()["folio"]
+
+    filas = {
+        o.folio: (o.comision_pct_snap, v.efectivo_lo_tiene, v.terminal_de)
+        for o, v in (
+            await db.execute(
+                select(Order, VentaDeTaquilla).join(
+                    VentaDeTaquilla, VentaDeTaquilla.order_id == Order.id
+                )
+            )
+        ).all()
+    }
+    assert filas[efectivo] == (Decimal("4.50"), "psd", None)
+    assert filas[terminal] == (Decimal("4.50"), None, "psd")
+    assert filas[despues][0] == Decimal("10.00")
+
+
+async def test_pie_del_recibo(cliente_http, usuarios, esc, caja):
+    a, b = esc["seat_ids"][:2]
+    r = await vender(cliente_http, usuarios, caja, venta(esc, [a]))
+    assert r.json()["pie"] == "Organiza: Circo Uno"
+    r = await configurar(
+        cliente_http, usuarios, esc, pie_recibo="Presenta Circo Uno · ¡Gracias!"
+    )
+    assert r.status_code == 200, r.text
+    r = await vender(cliente_http, usuarios, caja, venta(esc, [b]))
+    assert r.json()["pie"] == "Presenta Circo Uno · ¡Gracias!"
+    # Vacio: regresa al de inicio.
+    r = await configurar(cliente_http, usuarios, esc, pie_recibo="  ")
+    assert r.json()["pie_recibo"] is None
+
+
+async def test_formas_de_pago_y_lugares_por_venta(
+    cliente_http, db, usuarios, esc, caja
+):
+    r = await configurar(
+        cliente_http, usuarios, esc, formas_pago=["terminal", "efectivo"], max_lugares=2
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["formas_pago"] == ["efectivo", "terminal"]
+    r = await configurar(cliente_http, usuarios, esc, formas_pago=[])
+    assert r.status_code == 422
+    # La caja lo sabe (lo guarda el equipo para vender sin internet).
+    r = await cliente_http.get(f"{TQ}/cajas/{caja}", headers=de(usuarios, "acceso"))
+    d = r.json()
+    assert (d["formas_pago"], d["max_lugares"]) == (["efectivo", "terminal"], 2)
+    assert d["pie"] == "Organiza: Circo Uno" and d["reserva_cantidad"] == 10
+
+    a, b, c = esc["seat_ids"][:3]
+    r = await vender(
+        cliente_http,
+        usuarios,
+        caja,
+        venta(esc, [a], forma="cortesia", motivo_cortesia="Prensa"),
+    )
+    assert r.status_code == 409
+    assert r.json()["error"]["detalle"]["motivo"] == "forma_no_permitida"
+    r = await vender(cliente_http, usuarios, caja, venta(esc, [a, b, c]))
+    assert r.status_code == 409
+    assert r.json()["error"]["detalle"]["maximo"] == 2
+    # Nada se quedo tomado.
+    r = await vender(cliente_http, usuarios, caja, venta(esc, [a, b]))
+    assert r.status_code == 201, r.text
+
+
+async def test_sin_red_no_se_rechaza_por_un_cambio_posterior(
+    cliente_http, usuarios, esc, caja
+):
+    r = await reservar(cliente_http, usuarios, caja, esc, cantidad=3)
+    lugares = [x["seat_id"] for x in r.json()["lugares"]]
+    # Se vendio sin internet con cortesia y 3 lugares; luego cambiaron la
+    # configuracion.
+    await configurar(
+        cliente_http, usuarios, esc, formas_pago=["efectivo"], max_lugares=1
+    )
+    cuerpo = venta(
+        esc,
+        lugares,
+        forma="cortesia",
+        motivo_cortesia="Patrocinador",
+        sin_red=True,
+        folios=[1001, 1002, 1003],
+    )
+    r = await vender(cliente_http, usuarios, caja, cuerpo)
+    assert r.status_code == 201, r.text
+
+
+async def test_reserva_con_la_configuracion(cliente_http, db, usuarios, esc, caja):
+    luneta, balcon = esc["zonas"]
+    # Balcon se vende mas, pero el organizador quiere la reserva en Luneta.
+    for s in esc["seat_ids"][5:8]:
+        await poner_estado(db, esc["performance_id"], s, EstadoAsiento.VENDIDO.value)
+    r = await configurar(
+        cliente_http, usuarios, esc, reserva_cantidad=3, reserva_zona_id=luneta
+    )
+    assert r.status_code == 200, r.text
+    # El cajero no escoge: lo que pida, se aparta lo de la configuracion.
+    r = await reservar(
+        cliente_http, usuarios, caja, esc, quien="acceso", cantidad=5, zone_id=balcon
+    )
+    assert r.status_code == 200, r.text
+    lugares = r.json()["lugares"]
+    assert len(lugares) == 3 and {x["zona"] for x in lugares} == {"Luneta"}
+
+    # Una zona que no es del evento, no.
+    r = await configurar(cliente_http, usuarios, esc, reserva_zona_id=999_999)
+    assert r.status_code == 422
+
+
+async def test_diferencia_permitida_en_el_corte(cliente_http, usuarios, esc, caja):
+    await configurar(cliente_http, usuarios, esc, tolerancia_corte="20.00")
+    a = esc["seat_ids"][0]
+    await vender(cliente_http, usuarios, caja, venta(esc, [a]))
+    # Esperado: 500 de fondo + 800. Faltan $10: dentro de lo permitido.
+    r = await cliente_http.post(
+        f"{TQ}/cajas/{caja}/contar",
+        json={"efectivo": "1290.00", "terminal": "0", "folios_sobrantes": 10},
+        headers=de(usuarios, "acceso"),
+    )
+    assert r.status_code == 200, r.text
+    r = await cliente_http.post(
+        f"{TQ}/cajas/{caja}/cerrar", json={}, headers=de(usuarios, "org_a")
+    )
+    assert r.status_code == 200, r.text
+
+
+async def test_diferencia_mayor_pide_nota(cliente_http, usuarios, esc, caja):
+    await configurar(cliente_http, usuarios, esc, tolerancia_corte="20.00")
+    a = esc["seat_ids"][0]
+    await vender(cliente_http, usuarios, caja, venta(esc, [a]))
+    await cliente_http.post(
+        f"{TQ}/cajas/{caja}/contar",
+        json={"efectivo": "1270.00", "terminal": "0", "folios_sobrantes": 10},
+        headers=de(usuarios, "acceso"),
+    )
+    r = await cliente_http.post(
+        f"{TQ}/cajas/{caja}/cerrar", json={}, headers=de(usuarios, "org_a")
+    )
+    assert r.status_code == 409 and r.json()["error"]["detalle"]["campo"] == "nota"

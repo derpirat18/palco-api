@@ -22,9 +22,12 @@ Reglas (decididas con JuanMa el 30 oct):
   sobran sin ver lo que dice el sistema; el jefe cierra viendo la diferencia
   y, si la hay, deja una nota.
 
-En espera de Nadia (no se calcula aqui): quien se queda el efectivo, la
-comision de PSD sobre la taquilla y el texto legal definitivo. La orden
-congela la comision del organizador como cualquier venta.
+- **Configuracion** (2 nov: lo que tenia duda queda editable, por evento):
+  comision de PSD sobre la taquilla (sin valor, la del organizador en linea),
+  quien se queda el efectivo y de quien es la terminal (estos tres solo PSD;
+  cada venta los guarda para la liquidacion), pie del recibo, formas de
+  pago, lugares por venta, reserva sin internet y diferencia aceptada en el
+  corte. La liquidacion todavia no existe: aqui solo se guarda.
 """
 
 from __future__ import annotations
@@ -83,7 +86,13 @@ from app.services.venta import iva_de
 
 CANAL = "taquilla"
 CANAL_CORTESIA = "cortesia"
-MAX_LUGARES = 20
+MAX_LUGARES = 20  # valor de inicio; cada evento pone el suyo (hasta 50)
+FORMAS_DE_PAGO = (EFECTIVO, TERMINAL, CORTESIA)
+_NOMBRE_FORMA = {
+    EFECTIVO: "efectivo",
+    TERMINAL: "tarjeta en terminal",
+    CORTESIA: "cortesía",
+}
 CAJA_NO_EXISTE = "No encontramos esta caja."
 VENTA_NO_EXISTE = "No encontramos esta venta."
 _FUNCION_CERRADA = (EstadoFuncion.CANCELADA.value, EstadoFuncion.REALIZADA.value)
@@ -139,6 +148,27 @@ async def evento_de_taquilla(
     if jefe and puesto != JEFE:
         raise SinPermisoDeTaquilla("Esto lo hace el jefe de taquilla.")
     return evento, puesto
+
+
+def formas_de_pago(evento: Event) -> list[str]:
+    """Las que acepta la taquilla de este evento, en orden fijo."""
+    elegidas = evento.taquilla_formas_pago or FORMAS_DE_PAGO
+    return [f for f in FORMAS_DE_PAGO if f in elegidas]
+
+
+def comision_de_taquilla(evento: Event, cliente: Client) -> Decimal:
+    """La de PSD sobre la taquilla; sin valor, la del organizador en linea."""
+    if evento.taquilla_comision_pct is not None:
+        return evento.taquilla_comision_pct
+    return cliente.comision_pct
+
+
+def pie_por_omision(cliente: Client) -> str:
+    return f"Organiza: {cliente.nombre}"
+
+
+def pie_del_recibo(evento: Event, cliente: Client) -> str:
+    return (evento.taquilla_pie_recibo or "").strip() or pie_por_omision(cliente)
 
 
 def _ahora_local(evento_tz: str) -> datetime:
@@ -464,9 +494,11 @@ class TaquillaService:
                 else "Esta caja ya está cerrada."
             )
         t = await self.totales(caja)
+        evento = await self.db.get(Event, caja.event_id)
+        tolerancia = evento.taquilla_tolerancia_corte
         diferencia = (
-            caja.efectivo_contado != t.efectivo_esperado
-            or caja.terminal_contado != t.terminal
+            abs(caja.efectivo_contado - t.efectivo_esperado) > tolerancia
+            or abs(caja.terminal_contado - t.terminal) > tolerancia
             or (
                 t.folios_esperados is not None
                 and caja.folios_sobrantes != t.folios_esperados
@@ -544,10 +576,24 @@ class TaquillaService:
         folios = list(folios or [])
         if not seat_ids:
             raise TaquillaInvalida("Elige al menos un lugar.")
-        if len(seat_ids) > MAX_LUGARES or len(set(seat_ids)) != len(seat_ids):
-            raise TaquillaInvalida(
-                f"Una venta puede tener hasta {MAX_LUGARES} lugares, sin repetir."
-            )
+        if len(set(seat_ids)) != len(seat_ids):
+            raise TaquillaInvalida("Hay lugares repetidos en la venta.")
+        evento = await self.db.get(Event, caja.event_id)
+        # Sin red la venta ya se hizo (con la configuracion que tenia el
+        # equipo): al subirla no se rechaza por un cambio posterior.
+        if not sin_red:
+            maximo = evento.taquilla_max_lugares
+            if len(seat_ids) > maximo:
+                raise TaquillaInvalida(
+                    f"Una venta puede tener hasta {maximo} lugares.",
+                    {"motivo": "demasiados_lugares", "maximo": maximo},
+                )
+            if forma_pago not in formas_de_pago(evento):
+                nombre_forma = _NOMBRE_FORMA.get(forma_pago, forma_pago)
+                raise TaquillaInvalida(
+                    f"Esta taquilla no acepta {nombre_forma}.",
+                    {"campo": "forma_pago", "motivo": "forma_no_permitida"},
+                )
         if forma_pago == CORTESIA and len((motivo_cortesia or "").strip()) < 3:
             raise TaquillaInvalida(
                 "Escribe el motivo de la cortesía.", {"campo": "motivo_cortesia"}
@@ -559,7 +605,6 @@ class TaquillaService:
             )
 
         funcion = await self.db.get(Performance, performance_id)
-        evento = await self.db.get(Event, caja.event_id)
         if funcion is None or funcion.event_id != evento.id:
             raise RecursoNoEncontrado(FUNCION_NO_EXISTE)
         if funcion.estado in _FUNCION_CERRADA or not funcion.inventario_generado:
@@ -693,7 +738,9 @@ class TaquillaService:
                 iva=iva_total,
                 descuento=CERO,
                 total=total,
-                comision_pct_snap=CERO if es_cortesia else cliente.comision_pct,
+                comision_pct_snap=(
+                    CERO if es_cortesia else comision_de_taquilla(evento, cliente)
+                ),
                 iva_pct_snap=iva.pct,
                 idempotency_key=f"taquilla-{clave_cliente}",
                 pagada_en=hora,
@@ -798,6 +845,14 @@ class TaquillaService:
                 else None,
                 folios=folios,
                 entro_con_medio=bool(folios),
+                efectivo_lo_tiene=(
+                    evento.taquilla_efectivo_lo_tiene
+                    if forma_pago == EFECTIVO
+                    else None
+                ),
+                terminal_de=(
+                    evento.taquilla_terminal_de if forma_pago == TERMINAL else None
+                ),
                 clave_cliente=clave_cliente,
                 sin_red=sin_red,
                 vendida_en=hora,
@@ -827,13 +882,14 @@ class TaquillaService:
         caja: CajaDeTaquilla,
         usuario: User,
         performance_id: int,
-        cantidad: int,
+        cantidad: int | None = None,
         zone_id: int | None = None,
     ) -> int:
         """Aparta lugares para que la caja venda sin internet.
 
-        Solo con red y con la caja abierta. Sin zona, toma los de la zona
-        que menos se vende y, en ella, las ultimas filas. Vencen al cerrar
+        Solo con red y con la caja abierta. Sin cantidad ni zona, usa las de
+        la configuracion del evento; sin zona (o si la funcion no la tiene),
+        la zona que menos se vende y, en ella, las ultimas filas. Vencen al cerrar
         la venta en linea (luego la taquilla vende con el mapa) y se
         sueltan al contar la caja. Devuelve cuantos tiene la caja ahora para
         esa funcion.
@@ -846,12 +902,22 @@ class TaquillaService:
                 "necesita rango de folios para tener reserva.",
                 {"campo": "folio_desde"},
             )
-        if not 1 <= cantidad <= 50:
-            raise TaquillaInvalida("La reserva es de 1 a 50 lugares.")
         funcion = await self.db.get(Performance, performance_id)
         evento = await self.db.get(Event, caja.event_id)
         if funcion is None or funcion.event_id != evento.id:
             raise RecursoNoEncontrado(FUNCION_NO_EXISTE)
+        if cantidad is None:
+            cantidad = evento.taquilla_reserva_cantidad
+        if not 1 <= cantidad <= 50:
+            raise TaquillaInvalida("La reserva es de 1 a 50 lugares.")
+        if zone_id is None and evento.taquilla_reserva_zona_id is not None:
+            # La zona de la configuracion, si es del mapa de esta funcion.
+            zone_id = await self.db.scalar(
+                select(Zone.id).where(
+                    Zone.id == evento.taquilla_reserva_zona_id,
+                    Zone.seat_map_id == funcion.seat_map_id,
+                )
+            )
         if funcion.estado in _FUNCION_CERRADA or not funcion.inventario_generado:
             raise TaquillaInvalida("Esta función no está a la venta.")
         ahora = await self.db.scalar(select(func.now()))
@@ -1306,6 +1372,7 @@ class TaquillaService:
                 .order_by(OrderItem.id)
             )
         ).all()
+        cliente = await self.db.get(Client, evento.client_id)
         return {
             "folio": orden.folio,
             "uuid": venta.uuid,
@@ -1332,11 +1399,14 @@ class TaquillaService:
             "vendida_en": venta.vendida_en,
             "anulada": venta.anulada_en is not None,
             "texto_legal": evento.texto_legal_medio,
+            "pie": pie_del_recibo(evento, cliente),
         }
 
     async def corte_excel(self, caja: CajaDeTaquilla, evento: Event) -> bytes:
         t = await self.totales(caja)
         cajero = await self.db.get(User, caja.cajero_id)
+        cliente = await self.db.get(Client, evento.client_id)
+        quien = {"psd": "PSD", "organizador": "Organizador"}
         tz = await self.db.scalar(
             select(Venue.zona_horaria).where(Venue.id == evento.venue_id)
         )
@@ -1375,6 +1445,13 @@ class TaquillaService:
             ("Folios contados", caja.folios_sobrantes),
             ("Cerrada", local(caja.cerrada_en)),
             ("Nota de cierre", caja.nota_de_cierre),
+            # La configuracion de hoy (cada venta guarda la suya).
+            (
+                "Comisión de PSD en taquilla (%)",
+                f"{comision_de_taquilla(evento, cliente):g}",
+            ),
+            ("Efectivo lo tiene", quien[evento.taquilla_efectivo_lo_tiene]),
+            ("Terminal de", quien[evento.taquilla_terminal_de]),
         ]
         for nombre, valor in filas:
             hoja.append([nombre, valor])

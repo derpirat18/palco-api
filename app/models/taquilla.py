@@ -159,6 +159,11 @@ class VentaDeTaquilla(Base, PKMixin, UUIDPublicoMixin):
     sin_red: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
+    # Lo que decia la configuracion al vender (para la liquidacion): quien se
+    # queda el efectivo y de quien es la terminal. Sin valor en las ventas de
+    # antes del 2 nov.
+    efectivo_lo_tiene: Mapped[str | None] = mapped_column(String(12))
+    terminal_de: Mapped[str | None] = mapped_column(String(12))
     # Evita cobrar dos veces si el equipo reintenta la misma venta.
     clave_cliente: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     vendida_en: Mapped[datetime] = mapped_column(
@@ -178,6 +183,14 @@ class VentaDeTaquilla(Base, PKMixin, UUIDPublicoMixin):
             "forma_pago IN ('efectivo','terminal','cortesia')", name="forma_pago_valida"
         ),
         CheckConstraint("total >= 0", name="total_no_negativo"),
+        CheckConstraint(
+            "efectivo_lo_tiene IS NULL OR efectivo_lo_tiene IN ('psd','organizador')",
+            name="efectivo_lo_tiene_valido",
+        ),
+        CheckConstraint(
+            "terminal_de IS NULL OR terminal_de IN ('psd','organizador')",
+            name="terminal_de_valida",
+        ),
         CheckConstraint(
             "forma_pago <> 'efectivo' OR (recibido IS NOT NULL AND recibido >= total "
             "AND cambio = recibido - total)",

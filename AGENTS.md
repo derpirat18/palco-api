@@ -321,6 +321,14 @@ Detalle en ADR 0010. Lo que no se rompe:
   linea y se sueltan al contar la caja. Solo esa caja las vende. Sin red,
   el equipo vende de esa reserva con medio fisico y sube la venta despues
   con la misma `clave` (`sin_red`, `vendida_en`).
+- Configuracion de la taquilla (por evento, columnas `taquilla_*` de
+  `events`): comision de PSD sobre la taquilla (sin valor: la del
+  organizador en linea; va en `orders.comision_pct_snap`), quien se queda
+  el efectivo y de quien es la terminal (estos tres solo PSD; cada venta
+  los guarda en `box_office_sales`), pie del recibo, formas de pago,
+  lugares por venta, reserva sin internet (cuantos y zona; el cajero no
+  escoge, el jefe si) y diferencia aceptada en el corte. Una venta
+  `sin_red` no se rechaza al subirla por formas o maximo: ya se hizo.
 - Entrada general (EG): una zona con `general = true` es un cupo. Sus
   lugares (fila G, 1..N, sin posicion) los escoge el sistema
   (`ApartadoService.apartar_general`, al azar) y luego es un apartado

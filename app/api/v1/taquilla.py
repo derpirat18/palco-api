@@ -10,10 +10,14 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 
 from app.api.deps import DB, UsuarioActual
-from app.core.errors import FUNCION_NO_EXISTE, RecursoNoEncontrado
+from app.core.errors import (
+    FUNCION_NO_EXISTE,
+    ErrorDeDominio,
+    RecursoNoEncontrado,
+)
 from app.core.textos import Linea, LineaSegura, NombreDePersona, Parrafo
 from app.models.base import RolUsuario
-from app.models.catalog import Performance, Venue
+from app.models.catalog import Client, Performance, SeatMap, Venue, Zone
 from app.models.sales import Order
 from app.models.taquilla import CERRADA, JEFE
 from app.models.users import User
@@ -24,10 +28,18 @@ from app.services.taquilla import (
     SinPermisoDeTaquilla,
     TaquillaService,
     evento_de_taquilla,
+    formas_de_pago,
+    pie_del_recibo,
+    pie_por_omision,
     reserva_de,
 )
 
 router = APIRouter(prefix="/taquilla", tags=["taquilla"])
+
+
+class ConfigInvalida(ErrorDeDominio):
+    codigo = "configuracion_invalida"
+    http_status = 422
 
 
 # --------------------------------------------------------------------------
@@ -101,12 +113,37 @@ class VentaResumen(BaseModel):
     motivo_anulacion: str | None
 
 
+class ZonaTaquilla(BaseModel):
+    id: int
+    nombre: str
+    mapa: str
+
+
+FormaDePago = Literal["efectivo", "terminal", "cortesia"]
+Quien = Literal["psd", "organizador"]
+
+
 class EventoDetalle(BaseModel):
     evento: EventoTaquilla
     funciones: list[FuncionTaquilla]
+    # Configuracion. La comision solo la ven PSD y el organizador.
     taquilla_minutos_despues: int
     texto_legal_medio: str | None
     medio_lo_paga: str | None
+    comision_pct: Decimal | None
+    comision_en_linea: Decimal | None
+    efectivo_lo_tiene: Quien
+    terminal_de: Quien
+    pie_recibo: str | None
+    pie_por_omision: str
+    formas_pago: list[FormaDePago]
+    max_lugares: int
+    reserva_cantidad: int
+    reserva_zona_id: int | None
+    tolerancia_corte: Decimal
+    zonas: list[ZonaTaquilla]
+    # Quien pregunta puede cambiar comision, efectivo y terminal (solo PSD).
+    es_psd: bool
     personal: list[PersonaTaquilla]
     cajas: list[CajaResponse]
     # La caja sin cerrar de quien pregunta, si tiene.
@@ -119,12 +156,35 @@ class CajaDetalle(BaseModel):
     funciones: list[FuncionTaquilla]
     ventas: list[VentaResumen]
     es_mia: bool
+    # Lo que la caja necesita de la configuracion, tambien sin internet.
+    formas_pago: list[FormaDePago]
+    max_lugares: int
+    pie: str
+    reserva_cantidad: int
+    reserva_zona_id: int | None
+    zonas: list[ZonaTaquilla]
 
 
 class ConfigRequest(BaseModel):
     taquilla_minutos_despues: int | None = Field(default=None, ge=0, le=600)
     texto_legal_medio: Parrafo | None = Field(default=None, max_length=600)
-    medio_lo_paga: Literal["psd", "organizador"] | None = None
+    medio_lo_paga: Quien | None = None
+    # Solo PSD. comision_pct en null: la del organizador en linea.
+    comision_pct: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
+    efectivo_lo_tiene: Quien | None = None
+    terminal_de: Quien | None = None
+    # Organizador o PSD. pie_recibo en null: "Organiza: <organizador>".
+    pie_recibo: Linea | None = Field(default=None, max_length=120)
+    formas_pago: list[FormaDePago] | None = Field(
+        default=None, min_length=1, max_length=3
+    )
+    max_lugares: int | None = Field(default=None, ge=1, le=50)
+    reserva_cantidad: int | None = Field(default=None, ge=1, le=50)
+    # null: la zona que menos se vende.
+    reserva_zona_id: int | None = None
+    tolerancia_corte: Decimal | None = Field(
+        default=None, ge=0, le=100_000, decimal_places=2
+    )
 
 
 class PersonalRequest(BaseModel):
@@ -151,7 +211,7 @@ class CerrarRequest(BaseModel):
 
 class VenderRequest(BaseModel):
     performance_id: int
-    seat_ids: list[int] = Field(min_length=1, max_length=20)
+    seat_ids: list[int] = Field(min_length=1, max_length=50)
     email: EmailStr
     nombre: NombreDePersona = Field(min_length=1, max_length=120)
     apellidos: NombreDePersona | None = Field(default=None, max_length=120)
@@ -162,13 +222,13 @@ class VenderRequest(BaseModel):
     )
     autorizacion: Linea | None = Field(default=None, max_length=40)
     motivo_cortesia: LineaSegura | None = Field(default=None, max_length=100)
-    folios: list[int] = Field(default_factory=list, max_length=20)
+    folios: list[int] = Field(default_factory=list, max_length=50)
     acepta_aviso: bool
     acepta_marketing: bool = False
     aviso_version: str = Field(min_length=1, max_length=20)
     # Tipos de boleto (TB) por lugar (seat_id); el que no viene es adulto.
     tipos: dict[int, Literal["adulto", "nino", "mayor"]] = Field(
-        default_factory=dict, max_length=20
+        default_factory=dict, max_length=50
     )
     # Fase 3: la venta se hizo sin internet y se sube ahora; `vendida_en`
     # es la hora del equipo.
@@ -208,6 +268,7 @@ class ReciboResponse(BaseModel):
     vendida_en: datetime
     anulada: bool
     texto_legal: str | None
+    pie: str
 
 
 class MotivoRequest(BaseModel):
@@ -264,6 +325,25 @@ async def _caja(
     )
 
 
+async def _zonas_del_evento(db, event_id: int) -> list[ZonaTaquilla]:
+    """Las zonas de los mapas de sus funciones (para escoger la reserva)."""
+    filas = (
+        await db.execute(
+            select(Zone.id, Zone.nombre, SeatMap.nombre)
+            .join(SeatMap, SeatMap.id == Zone.seat_map_id)
+            .where(
+                Zone.seat_map_id.in_(
+                    select(Performance.seat_map_id).where(
+                        Performance.event_id == event_id
+                    )
+                )
+            )
+            .order_by(SeatMap.nombre, Zone.orden, Zone.id)
+        )
+    ).all()
+    return [ZonaTaquilla(id=i, nombre=n, mapa=m) for i, n, m in filas]
+
+
 def _solo_organizador(usuario: User) -> None:
     if usuario.rol not in (RolUsuario.ADMIN_PSD, RolUsuario.ORGANIZADOR):
         raise SinPermisoDeTaquilla("Esto lo configura el organizador o PSD.")
@@ -294,6 +374,8 @@ async def evento(event_id: int, db: DB, usuario: UsuarioActual) -> EventoDetalle
     svc = TaquillaService(db)
     recinto = await db.get(Venue, ev.venue_id)
     cajas = await svc.cajas(ev, usuario, puesto)
+    cliente = await db.get(Client, ev.client_id)
+    ve_comision = usuario.rol in (RolUsuario.ADMIN_PSD, RolUsuario.ORGANIZADOR)
     mi_caja = next(
         (c.uuid for c, _ in cajas if c.cajero_id == usuario.id and c.estado != CERRADA),
         None,
@@ -307,6 +389,19 @@ async def evento(event_id: int, db: DB, usuario: UsuarioActual) -> EventoDetalle
         taquilla_minutos_despues=ev.taquilla_minutos_despues,
         texto_legal_medio=ev.texto_legal_medio,
         medio_lo_paga=ev.medio_lo_paga,
+        comision_pct=ev.taquilla_comision_pct if ve_comision else None,
+        comision_en_linea=cliente.comision_pct if ve_comision else None,
+        efectivo_lo_tiene=ev.taquilla_efectivo_lo_tiene,
+        terminal_de=ev.taquilla_terminal_de,
+        pie_recibo=ev.taquilla_pie_recibo,
+        pie_por_omision=pie_por_omision(cliente),
+        formas_pago=formas_de_pago(ev),
+        max_lugares=ev.taquilla_max_lugares,
+        reserva_cantidad=ev.taquilla_reserva_cantidad,
+        reserva_zona_id=ev.taquilla_reserva_zona_id,
+        tolerancia_corte=ev.taquilla_tolerancia_corte,
+        zonas=await _zonas_del_evento(db, ev.id),
+        es_psd=usuario.rol == RolUsuario.ADMIN_PSD,
         personal=[
             PersonaTaquilla(
                 user_id=u.id, nombre=u.nombre, email=u.email, puesto=p.puesto
@@ -333,6 +428,33 @@ async def configurar(
         ev.texto_legal_medio = (cambios["texto_legal_medio"] or "").strip() or None
     if "medio_lo_paga" in cambios:
         ev.medio_lo_paga = cambios["medio_lo_paga"]
+    solo_psd = {"comision_pct", "efectivo_lo_tiene", "terminal_de"} & set(cambios)
+    if solo_psd and usuario.rol != RolUsuario.ADMIN_PSD:
+        raise SinPermisoDeTaquilla(
+            "La comisión, el efectivo y la terminal de la taquilla solo los cambia PSD."
+        )
+    if "comision_pct" in cambios:
+        ev.taquilla_comision_pct = cambios["comision_pct"]
+    for campo in ("efectivo_lo_tiene", "terminal_de"):
+        if cambios.get(campo) is not None:
+            setattr(ev, f"taquilla_{campo}", cambios[campo])
+    if "pie_recibo" in cambios:
+        ev.taquilla_pie_recibo = (cambios["pie_recibo"] or "").strip() or None
+    if cambios.get("formas_pago") is not None:
+        ev.taquilla_formas_pago = sorted(set(cambios["formas_pago"]))
+    for campo in ("max_lugares", "reserva_cantidad", "tolerancia_corte"):
+        if cambios.get(campo) is not None:
+            setattr(ev, f"taquilla_{campo}", cambios[campo])
+    if "reserva_zona_id" in cambios:
+        zona = cambios["reserva_zona_id"]
+        if zona is not None and zona not in {
+            z.id for z in await _zonas_del_evento(db, ev.id)
+        }:
+            raise ConfigInvalida(
+                "Esa zona no es de los mapas de este evento.",
+                {"campo": "reserva_zona_id"},
+            )
+        ev.taquilla_reserva_zona_id = zona
     await db.commit()
     return await evento(event_id, db, usuario)
 
@@ -441,6 +563,12 @@ async def _detalle(svc, caja, ev, puesto, usuario, db) -> CajaDetalle:
         ],
         ventas=ventas,
         es_mia=caja.cajero_id == usuario.id,
+        formas_pago=formas_de_pago(ev),
+        max_lugares=ev.taquilla_max_lugares,
+        pie=pie_del_recibo(ev, await db.get(Client, ev.client_id)),
+        reserva_cantidad=ev.taquilla_reserva_cantidad,
+        reserva_zona_id=ev.taquilla_reserva_zona_id,
+        zonas=await _zonas_del_evento(db, ev.id),
     )
 
 
@@ -529,8 +657,8 @@ async def mapa(
 
 class ReservarRequest(BaseModel):
     performance_id: int
-    cantidad: int = Field(default=10, ge=1, le=50)
-    # Sin zona: la que menos se vende.
+    # Sin cantidad ni zona: las de la configuracion. Solo el jefe escoge otras.
+    cantidad: int | None = Field(default=None, ge=1, le=50)
     zone_id: int | None = None
 
 
@@ -583,8 +711,13 @@ async def reservar(
     svc = TaquillaService(db)
     caja, _, puesto = await svc.caja(caja_uuid, usuario)
     _solo_su_caja(caja, usuario, puesto)
+    escoge = puesto == JEFE
     await svc.reservar(
-        caja, usuario, datos.performance_id, datos.cantidad, datos.zone_id
+        caja,
+        usuario,
+        datos.performance_id,
+        datos.cantidad if escoge else None,
+        datos.zone_id if escoge else None,
     )
     await db.commit()
     return await _reserva(svc, caja)

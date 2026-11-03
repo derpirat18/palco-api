@@ -209,6 +209,36 @@ class Event(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     texto_legal_medio: Mapped[str | None] = mapped_column(Text)
     # Quien paga el medio fisico: entra en la liquidacion.
     medio_lo_paga: Mapped[str | None] = mapped_column(String(12))
+    # Configuracion de la taquilla (dudas resueltas como editables, 2 nov).
+    # Solo PSD: comision sobre la taquilla (sin valor: la del organizador en
+    # linea), quien se queda el efectivo y de quien es la terminal. Cada
+    # venta guarda los tres (la comision en orders.comision_pct_snap).
+    taquilla_comision_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    taquilla_efectivo_lo_tiene: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="organizador", server_default="organizador"
+    )
+    taquilla_terminal_de: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="organizador", server_default="organizador"
+    )
+    # Organizador o PSD. Pie del recibo (sin valor: "Organiza: <organizador>").
+    taquilla_pie_recibo: Mapped[str | None] = mapped_column(Text)
+    # Formas de pago que acepta la taquilla (sin valor: las tres).
+    taquilla_formas_pago: Mapped[list | None] = mapped_column(JSONB)
+    taquilla_max_lugares: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=20, server_default="20"
+    )
+    # Reserva para vender sin internet: cuantos por funcion y de que zona
+    # (sin zona, o si la funcion no la tiene: la que menos se vende).
+    taquilla_reserva_cantidad: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=10, server_default="10"
+    )
+    taquilla_reserva_zona_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("zones.id", ondelete="SET NULL")
+    )
+    # Diferencia de dinero que se acepta en el corte sin escribir nota.
+    taquilla_tolerancia_corte: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False, default=Decimal("0"), server_default="0"
+    )
 
     # --- Tipos de boleto (TB) ---
     # Edades que el organizador anuncia para el precio de nino y el de
@@ -230,6 +260,28 @@ class Event(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
         CheckConstraint(
             "medio_lo_paga IS NULL OR medio_lo_paga IN ('psd','organizador')",
             name="medio_lo_paga_valido",
+        ),
+        CheckConstraint(
+            "taquilla_comision_pct IS NULL OR taquilla_comision_pct BETWEEN 0 AND 100",
+            name="taquilla_comision_rango",
+        ),
+        CheckConstraint(
+            "taquilla_efectivo_lo_tiene IN ('psd','organizador')",
+            name="taquilla_efectivo_valido",
+        ),
+        CheckConstraint(
+            "taquilla_terminal_de IN ('psd','organizador')",
+            name="taquilla_terminal_valida",
+        ),
+        CheckConstraint(
+            "taquilla_max_lugares BETWEEN 1 AND 50", name="taquilla_max_lugares_rango"
+        ),
+        CheckConstraint(
+            "taquilla_reserva_cantidad BETWEEN 1 AND 50",
+            name="taquilla_reserva_rango",
+        ),
+        CheckConstraint(
+            "taquilla_tolerancia_corte >= 0", name="taquilla_tolerancia_no_negativa"
         ),
         CheckConstraint(
             "edad_nino_hasta IS NULL OR edad_nino_hasta BETWEEN 1 AND 17",
