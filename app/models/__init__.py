@@ -28,6 +28,7 @@ from app.models.commerce import (
 from app.models.inventory import InventoryMove, PerformanceSeat
 from app.models.outbox import OutboxEvent
 from app.models.payments import PaymentEvent
+from app.models.promociones import Promocion, PromocionEvento
 from app.models.sales import (
     AccessDevice,
     Consent,
@@ -69,6 +70,8 @@ __all__ = [
     "PerformancePrice",
     "PerformanceSeat",
     "PersonalDeTaquilla",
+    "Promocion",
+    "PromocionEvento",
     "Scan",
     "Seat",
     "SeatMap",

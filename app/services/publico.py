@@ -36,6 +36,7 @@ from app.models.catalog import (
     Zone,
 )
 from app.models.inventory import PerformanceSeat
+from app.services import promociones
 from app.services.tipos import TIPOS, nombre_con_edad, tarifas_de
 from app.services.venta import iva_de, motivo_no_se_vende, visible_al_publico
 
@@ -72,6 +73,9 @@ class FuncionPublica:
     # disponible | ultimos_lugares | agotado; None si aun no hay inventario
     disponibilidad: str | None
     precio_desde: Decimal | None
+    # Promociones (PR1) que aplican en linea a esta funcion. Varias es raro:
+    # gana la de mayor descuento al cobrar.
+    promociones: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -212,6 +216,10 @@ class PublicoService:
             for pid, precio in (await self._precio_minimo_de_zona(ids)).items()
         }
 
+        promos = await promociones.reglas_por_funcion(
+            self.db, evento, funciones, recinto.zona_horaria, promociones.LINEA
+        )
+
         return EventoPublico(
             uuid=evento.uuid,
             slug=evento.slug,
@@ -231,7 +239,11 @@ class PublicoService:
             ),
             funciones=tuple(
                 self._funcion_publica(
-                    f, ahora, inventario.get(f.id), precio_de_zona.get(f.id)
+                    f,
+                    ahora,
+                    inventario.get(f.id),
+                    precio_de_zona.get(f.id),
+                    promos.get(f.id, ()),
                 )
                 for f in funciones
             ),
@@ -268,8 +280,14 @@ class PublicoService:
         funcion, evento, _, mapa = fila
 
         inventario = await self._inventario([funcion.id])
+        zh = await self.db.scalar(
+            select(Venue.zona_horaria).where(Venue.id == evento.venue_id)
+        )
+        promos = await promociones.reglas_por_funcion(
+            self.db, evento, [funcion], zh, promociones.LINEA
+        )
         publica = self._funcion_publica(
-            funcion, ahora, inventario.get(funcion.id), None
+            funcion, ahora, inventario.get(funcion.id), None, promos.get(funcion.id, ())
         )
 
         zonas = (
@@ -427,6 +445,7 @@ class PublicoService:
         ahora: datetime,
         inventario: _Inventario | None,
         precio_de_zona: Decimal | None,
+        reglas=(),
     ) -> FuncionPublica:
         """Traduce las reglas de venta al estado que ve el comprador.
 
@@ -467,6 +486,9 @@ class PublicoService:
             venta_abre_en=funcion.venta_abre_en,
             disponibilidad=disponibilidad,
             precio_desde=desde,
+            promociones=tuple(r.publica() for r in reglas)
+            if estado_venta in ("en_venta", "proximamente")
+            else (),
         )
 
     async def _inventario(self, performance_ids: list[int]) -> dict[int, _Inventario]:

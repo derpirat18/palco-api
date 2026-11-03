@@ -84,14 +84,12 @@ async def test_catalogo_segun_quien(cliente_http, usuarios):
     r = await cliente_http.get(RP, headers=de(usuarios, "admin"))
     tipos = [x["tipo"] for x in r.json()["reportes"]]
     assert tipos == [
-        "ventas", "taquilla", "asistencia", "cortesias", "compradores", "ocupacion"
-    ]  # fmt: skip
-    assert [x["tipo"] for x in r.json()["proximamente"]] == [
-        "liquidacion",
+        "ventas", "taquilla", "asistencia", "cortesias", "compradores", "ocupacion",
         "promociones",
-    ]
+    ]  # fmt: skip
+    assert [x["tipo"] for x in r.json()["proximamente"]] == ["liquidacion"]
     r = await cliente_http.get(RP, headers=de(usuarios, "org_a"))
-    assert len(r.json()["reportes"]) == 6
+    assert len(r.json()["reportes"]) == 7
     # La puerta no tiene reportes.
     r = await cliente_http.get(RP, headers=de(usuarios, "acceso"))
     assert r.json()["reportes"] == []

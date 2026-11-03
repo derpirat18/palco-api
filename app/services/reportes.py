@@ -197,6 +197,13 @@ CATALOGO: tuple[Definicion, ...] = (
         ("periodo", "evento", "funcion", "zona"),
         "funcion",
     ),
+    Definicion(
+        "promociones",
+        "Promociones",
+        "¿Cuánto vendió cada promoción?",
+        ("periodo", "evento", "funcion", "canal"),
+        "compra",
+    ),
 )
 POR_TIPO = {d.tipo: d for d in CATALOGO}
 PERSONALES = {"compradores"}
@@ -367,9 +374,10 @@ async def _ventas(db: AsyncSession, f: Filtros) -> Reporte:
             OrderItem.anulado,
             OrderItem.importe,
             OrderItem.iva,
-            Order.comision_pct_snap,
+            func.coalesce(OrderItem.comision_pct_snap, Order.comision_pct_snap),
             Order.pagada_en,
             Order.id,
+            OrderItem.descuento,
         )
         .join(Order, Order.id == OrderItem.order_id)
         .join(Performance, Performance.id == Order.performance_id)
@@ -407,6 +415,7 @@ async def _ventas(db: AsyncSession, f: Filtros) -> Reporte:
         pct,
         pagada,
         oid,
+        descuento,
     ) in filas:
         canal = _canal(canal_orden)
         clave = (evento, inicia, zona, tipo, canal)
@@ -420,6 +429,7 @@ async def _ventas(db: AsyncSession, f: Filtros) -> Reporte:
                 "canal": CANALES[canal],
                 "boletos": 0,
                 "venta_bruta": CERO,
+                "descuento": CERO,
                 "iva": CERO,
                 "comision": CERO,
                 "neto": CERO,
@@ -432,6 +442,8 @@ async def _ventas(db: AsyncSession, f: Filtros) -> Reporte:
             comision = _dinero(importe * pct / 100)
             g["boletos"] += 1
             g["venta_bruta"] += importe
+            g["descuento"] += descuento
+            tot["descuento"] += descuento
             g["iva"] += iva
             g["comision"] += comision
             g["neto"] += importe - comision
@@ -468,6 +480,9 @@ async def _ventas(db: AsyncSession, f: Filtros) -> Reporte:
                 "dinero",
             ),
             Indicador("Reembolsado", _dinero(tot["reembolsado"]), "dinero"),
+            Indicador(
+                "Descuentos por promociones", _dinero(tot["descuento"]), "dinero"
+            ),
         ],
         [
             Columna("evento", "Evento"),
@@ -477,6 +492,7 @@ async def _ventas(db: AsyncSession, f: Filtros) -> Reporte:
             Columna("canal", "Canal"),
             Columna("boletos", "Boletos", "entero"),
             Columna("venta_bruta", "Venta bruta", "dinero"),
+            Columna("descuento", "Descuento", "dinero"),
             Columna("iva", "IVA incluido", "dinero"),
             Columna("comision", "Comisión PSD", "dinero"),
             Columna("neto", "Neto organizador", "dinero"),
@@ -486,8 +502,9 @@ async def _ventas(db: AsyncSession, f: Filtros) -> Reporte:
         renglones,
         _por_dia(por_dia),
         [
-            "La venta bruta es lo que pagó el comprador, con IVA. La comisión de "
-            "PSD se calcula con la que tenía cada compra.",
+            "La venta bruta es lo que pagó el comprador, con IVA y ya con el "
+            "descuento de las promociones. La comisión de PSD se calcula con la "
+            "que tenía cada compra (o cada boleto, si su promoción traía una).",
             "La comisión de Stripe todavía no se guarda por compra: el neto aún "
             "no la descuenta.",
         ],
@@ -1109,6 +1126,147 @@ async def _ocupacion(db: AsyncSession, f: Filtros) -> Reporte:
     )
 
 
+# --------------------------------------------------------------------------
+# Promociones (PR1)
+# --------------------------------------------------------------------------
+
+
+async def _promociones(db: AsyncSession, f: Filtros) -> Reporte:
+    q = (
+        select(
+            Order.promocion_snap,
+            Event.nombre,
+            Performance.inicia_en,
+            Venue.zona_horaria,
+            Order.canal,
+            Order.estado,
+            OrderItem.anulado,
+            OrderItem.importe,
+            OrderItem.descuento,
+            func.coalesce(OrderItem.comision_pct_snap, Order.comision_pct_snap),
+            Order.id,
+        )
+        .join(Order, Order.id == OrderItem.order_id)
+        .join(Performance, Performance.id == Order.performance_id)
+        .join(Event, Event.id == Performance.event_id)
+        .join(Venue, Venue.id == Event.venue_id)
+        .where(
+            Order.promocion_id.is_not(None),
+            Order.estado.in_(VENDIDAS),
+            Order.pagada_en.is_not(None),
+        )
+    )
+    q = _filtro_canal(_periodo(_alcance(q, f), f, Order.pagada_en), f.canal)
+    filas = (await db.execute(q.limit(MAXIMO_DE_FILAS))).all()
+
+    grupos: dict[tuple, dict[str, Any]] = {}
+    ordenes: set[int] = set()
+    por_promo: dict[str, Decimal] = defaultdict(lambda: CERO)
+    tot = defaultdict(lambda: CERO)
+    for (
+        promo,
+        evento,
+        inicia,
+        zh,
+        canal_orden,
+        estado,
+        anulado,
+        importe,
+        descuento,
+        pct,
+        oid,
+    ) in filas:
+        canal = _canal(canal_orden)
+        g = grupos.setdefault(
+            (promo, evento, inicia, canal),
+            {
+                "promocion": promo,
+                "evento": evento,
+                "funcion": _local(inicia, zh),
+                "canal": CANALES[canal],
+                "compras": set(),
+                "boletos": 0,
+                "sin_costo": 0,
+                "venta": CERO,
+                "descuento": CERO,
+                "comision": CERO,
+                "neto": CERO,
+                "cancelados": 0,
+            },
+        )
+        if estado == EstadoOrden.PAGADA.value and not anulado:
+            comision = _dinero(importe * pct / 100)
+            g["compras"].add(oid)
+            g["boletos"] += 1
+            if importe == 0 and descuento > 0:
+                g["sin_costo"] += 1
+            g["venta"] += importe
+            g["descuento"] += descuento
+            g["comision"] += comision
+            g["neto"] += importe - comision
+            ordenes.add(oid)
+            por_promo[promo] += importe
+            tot["boletos"] += 1
+            tot["venta"] += importe
+            tot["descuento"] += descuento
+            tot["comision"] += comision
+        else:
+            g["cancelados"] += 1
+    renglones = []
+    for g in sorted(
+        grupos.values(),
+        key=lambda r: (r["promocion"], r["evento"], r["funcion"], r["canal"]),
+    ):
+        renglones.append({**g, "compras": len(g["compras"])})
+    grafica = (
+        Grafica(
+            "Venta por promoción",
+            list(por_promo),
+            [float(v) for v in por_promo.values()],
+            "dinero",
+        )
+        if por_promo
+        else None
+    )
+    return Reporte(
+        "promociones",
+        "Promociones",
+        [
+            Indicador("Venta con promoción", _dinero(tot["venta"]), "dinero"),
+            Indicador("Compras con promoción", len(ordenes)),
+            Indicador("Boletos", int(tot["boletos"])),
+            Indicador("Descontado", _dinero(tot["descuento"]), "dinero"),
+            Indicador("Comisión de PSD", _dinero(tot["comision"]), "dinero"),
+            Indicador(
+                "Neto del organizador",
+                _dinero(tot["venta"] - tot["comision"]),
+                "dinero",
+            ),
+        ],
+        [
+            Columna("promocion", "Promoción"),
+            Columna("evento", "Evento"),
+            Columna("funcion", "Función", "fechahora"),
+            Columna("canal", "Canal"),
+            Columna("compras", "Compras", "entero"),
+            Columna("boletos", "Boletos", "entero"),
+            Columna("sin_costo", "Sin costo (2x1)", "entero"),
+            Columna("venta", "Venta", "dinero"),
+            Columna("descuento", "Descontado", "dinero"),
+            Columna("comision", "Comisión PSD", "dinero"),
+            Columna("neto", "Neto organizador", "dinero"),
+            Columna("cancelados", "Cancelados", "entero"),
+        ],
+        renglones,
+        grafica,
+        [
+            "Solo compras con promoción. La venta es lo que pagó el comprador, ya "
+            "con el descuento; lo descontado es lo que dejó de cobrarse.",
+            "El nombre es el que tenía la promoción al momento de cada compra.",
+        ],
+    )
+
+
 GENERADORES = {
     "ventas": _ventas,
     "taquilla": _taquilla,
@@ -1116,6 +1274,7 @@ GENERADORES = {
     "cortesias": _cortesias,
     "compradores": _compradores,
     "ocupacion": _ocupacion,
+    "promociones": _promociones,
 }
 
 

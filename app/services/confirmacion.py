@@ -136,7 +136,10 @@ def datos_del_correo(
                 for (zona_, precio), n in grupos.items()
             ],
             "descuento": pesos(orden.descuento) if orden.descuento > 0 else None,
-            "subtotal": pesos(orden.subtotal),
+            "promocion": orden.promocion_snap,
+            # Lo que se cobra sin IVA. Con promocion, despues del descuento:
+            # asi Subtotal + IVA = Total en el correo (PR1).
+            "subtotal": pesos(orden.total - orden.iva),
             "iva_pct": format(orden.iva_pct_snap.normalize(), "f"),
             "iva": pesos(orden.iva),
             "total": pesos(orden.total),

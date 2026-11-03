@@ -137,6 +137,8 @@ async def test_no_sale_nada_del_organizador(cliente_http, db, clientes):
         "venta_abre_en",
         "disponibilidad",
         "precio_desde",
+        # Promociones (PR1): nombre, tipo y alcance; nunca la comision.
+        "promociones",
     }
     texto = str(cuerpo).lower()
     assert "comision" not in texto

@@ -17,11 +17,12 @@ from app.core.errors import (
 )
 from app.core.textos import Linea, LineaSegura, NombreDePersona, Parrafo
 from app.models.base import RolUsuario
-from app.models.catalog import Client, Performance, SeatMap, Venue, Zone
+from app.models.catalog import Client, Event, Performance, SeatMap, Venue, Zone
 from app.models.sales import Order
 from app.models.taquilla import CERRADA, JEFE
 from app.models.users import User
 from app.schemas.cortesias import MapaDelPanelResponse
+from app.services import promociones
 from app.services.mapa_panel import MapaPanelService
 from app.services.reenvio import pedir_reenvio, tapar_correo
 from app.services.taquilla import (
@@ -234,6 +235,9 @@ class VenderRequest(BaseModel):
     # es la hora del equipo.
     sin_red: bool = False
     vendida_en: datetime | None = None
+    # Sin red: la promocion que aplico el equipo (PR1). Con red la decide el
+    # servidor y esto no se usa.
+    promocion_id: int | None = None
     # La pone el equipo una vez por venta: si reintenta, no se cobra dos veces.
     clave: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
@@ -253,6 +257,9 @@ class ReciboResponse(BaseModel):
     zona_horaria: str
     inicia_en: datetime
     lugares: list[LugarRecibo]
+    # Promociones (PR1): cuanto se desconto y con cual.
+    descuento: Decimal = Decimal("0")
+    promocion: str | None = None
     total: Decimal
     iva: Decimal
     iva_pct: Decimal
@@ -626,10 +633,31 @@ async def corte_excel(caja_uuid: UUID, db: DB, usuario: UsuarioActual) -> Respon
 # --------------------------------------------------------------------------
 
 
-@router.get("/funciones/{performance_id}/mapa", response_model=MapaDelPanelResponse)
+class PromocionDeTaquilla(BaseModel):
+    """Lo que el equipo necesita para calcular la promocion (PR1)."""
+
+    id: int
+    nombre: str
+    tipo: Literal["2x1", "porcentaje"]
+    porcentaje: Decimal | None
+    todos_los_tipos: bool
+    # Zonas de la funcion donde aplica; None: todas.
+    zonas: list[int] | None
+
+
+class PromocionesDeFuncion(BaseModel):
+    performance_id: int
+    promociones: list[PromocionDeTaquilla]
+
+
+class MapaDeTaquillaResponse(MapaDelPanelResponse):
+    promociones: list[PromocionDeTaquilla] = Field(default_factory=list)
+
+
+@router.get("/funciones/{performance_id}/mapa", response_model=MapaDeTaquillaResponse)
 async def mapa(
     performance_id: int, db: DB, usuario: UsuarioActual, caja: UUID | None = None
-) -> MapaDelPanelResponse:
+) -> MapaDeTaquillaResponse:
     """El mapa con lo que la taquilla puede vender ahora (sin bloqueados)."""
     funcion = await db.get(Performance, performance_id)
     if funcion is None:
@@ -643,10 +671,16 @@ async def mapa(
         # Los lugares de la reserva de esa caja salen libres para ella.
         la_caja, _, _ = await TaquillaService(db).caja(caja, usuario)
         reserva = reserva_de(la_caja)
-    return MapaDelPanelResponse.model_validate(
+    base = MapaDelPanelResponse.model_validate(
         await MapaPanelService(db).de_funcion(
             funcion, con_bloqueadas=False, reserva=reserva
         )
+    )
+    evento = await db.get(Event, funcion.event_id)
+    reglas = await promociones.reglas_de(db, funcion, evento, promociones.TAQUILLA)
+    return MapaDeTaquillaResponse(
+        **base.model_dump(),
+        promociones=[PromocionDeTaquilla(**r.publica()) for r in reglas],
     )
 
 
@@ -680,14 +714,27 @@ class ReservaResponse(BaseModel):
     lugares: list[LugarReservado]
     # Para vender sin red el equipo necesita saber que folios ya salieron.
     folios_usados: list[int]
+    # Las promociones de cada funcion de la reserva: sin red el equipo las
+    # aplica con la misma regla.
+    promociones: list[PromocionesDeFuncion] = Field(default_factory=list)
 
 
 async def _reserva(svc: TaquillaService, caja) -> ReservaResponse:
     ventas = await svc.ventas_de(caja)
     usados = sorted({f for v, *_ in ventas if v.anulada_en is None for f in v.folios})
+    lugares = [LugarReservado(**x) for x in await svc.reserva(caja)]
     return ReservaResponse(
-        lugares=[LugarReservado(**x) for x in await svc.reserva(caja)],
+        lugares=lugares,
         folios_usados=usados,
+        promociones=[
+            PromocionesDeFuncion(
+                performance_id=pid,
+                promociones=[PromocionDeTaquilla(**r.publica()) for r in reglas],
+            )
+            for pid, reglas in (
+                await svc.promociones_de(caja, {x.performance_id for x in lugares})
+            ).items()
+        ],
     )
 
 
@@ -764,6 +811,7 @@ async def vender(
         tipos=dict(datos.tipos),
         sin_red=datos.sin_red,
         vendida_en=datos.vendida_en,
+        promocion_id=datos.promocion_id,
     )
     await db.commit()
     return await _recibo(svc, venta, caja, ev)

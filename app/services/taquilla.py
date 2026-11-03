@@ -78,6 +78,7 @@ from app.models.taquilla import (
     VentaDeTaquilla,
 )
 from app.models.users import User
+from app.services import promociones
 from app.services.checkout import CERO, nuevo_codigo_de_boleto, nuevo_folio
 from app.services.consentimientos import ConsentimientoService
 from app.services.escaner import VALIDO, horario_de_escaneo
@@ -548,10 +549,12 @@ class TaquillaService:
         tipos: dict[int, str] | None = None,
         sin_red: bool = False,
         vendida_en: datetime | None = None,
+        promocion_id: int | None = None,
     ) -> VentaDeTaquilla:
         """Vende en la caja. `sin_red`: la venta se hizo sin internet con la
         reserva de la caja y el medio fisico, y se sube ahora; `vendida_en`
-        es la hora del equipo en que se cobro."""
+        es la hora del equipo en que se cobro y `promocion_id` la promocion
+        que aplico el equipo (PR1): se respeta lo que se cobro."""
         previa = await self.db.scalar(
             select(VentaDeTaquilla).where(
                 VentaDeTaquilla.clave_cliente == clave_cliente
@@ -675,7 +678,43 @@ class TaquillaService:
             )
             for ps, seat, zona in filas
         ]
-        total = _dinero(sum(precios, CERO))
+        # Promociones (PR1): la misma calculadora que la compra en linea.
+        promo = promociones.SIN_PROMOCION
+        if not es_cortesia:
+            if sin_red:
+                regla = (
+                    await promociones.regla_guardada(self.db, promocion_id, evento)
+                    if promocion_id
+                    else None
+                )
+                reglas = [regla] if regla else []
+            else:
+                reglas = await promociones.reglas_de(
+                    self.db, funcion, evento, promociones.TAQUILLA
+                )
+            promo = await promociones.cotizar(
+                self.db,
+                reglas,
+                funcion.id,
+                [
+                    promociones.Lugar(ps.id, zona.id, tipo_de[ps.id], precio)
+                    for (ps, _, zona), precio in zip(filas, precios, strict=True)
+                ],
+                [ps.id for ps, _, _ in filas],
+            )
+            # Sin red ya se vendio y se cobro: no se rechaza por un impar.
+            if promo.faltan and not sin_red:
+                raise TaquillaInvalida(
+                    promociones.mensaje_de_par(
+                        promo, {zona.id: zona.nombre for _, _, zona in filas}
+                    ),
+                    {"motivo": "par_incompleto", "zonas": list(promo.faltan)},
+                )
+        descuentos = [promo.descuento_de(ps.id) for ps, _, _ in filas]
+        precios_con_descuento = [
+            p - d for p, d in zip(precios, descuentos, strict=True)
+        ]
+        total = _dinero(sum(precios_con_descuento, CERO))
         if forma_pago == EFECTIVO and (recibido is None or _dinero(recibido) < total):
             raise TaquillaInvalida(
                 f"El efectivo recibido no alcanza: el total es ${total:,.2f}.",
@@ -728,16 +767,21 @@ class TaquillaService:
 
             comprador = await self._persona(email, nombre, apellidos, telefono)
             cliente = await self.db.get(Client, evento.client_id)
-            iva_total = _dinero(sum((iva.iva_contenido(p) for p in precios), CERO))
+            iva_total = _dinero(
+                sum((iva.iva_contenido(p) for p in precios_con_descuento), CERO)
+            )
+            descuento_total = _dinero(sum(descuentos, CERO))
             orden = Order(
                 folio=nuevo_folio(),
                 customer_id=comprador.id,
                 performance_id=funcion.id,
                 estado=EstadoOrden.PAGADA.value,
-                subtotal=total - iva_total,
+                subtotal=total + descuento_total - iva_total,
                 iva=iva_total,
-                descuento=CERO,
+                descuento=descuento_total,
                 total=total,
+                promocion_id=promo.regla.id if promo.regla else None,
+                promocion_snap=promo.regla.nombre if promo.regla else None,
                 comision_pct_snap=(
                     CERO if es_cortesia else comision_de_taquilla(evento, cliente)
                 ),
@@ -772,9 +816,10 @@ class TaquillaService:
                     ),
                     tipo=tipo_de[ps.id],
                     precio_unitario=precio,
-                    iva=iva.iva_contenido(precio),
-                    descuento=CERO,
-                    importe=precio,
+                    iva=iva.iva_contenido(precio - promo.descuento_de(ps.id)),
+                    descuento=promo.descuento_de(ps.id),
+                    importe=precio - promo.descuento_de(ps.id),
+                    comision_pct_snap=promo.comision_de(ps.id),
                 )
                 for (ps, seat, zona), precio in zip(filas, precios, strict=True)
             ]
@@ -1063,6 +1108,28 @@ class TaquillaService:
                 }
             )
         return r
+
+    async def promociones_de(
+        self, caja: CajaDeTaquilla, performance_ids: set[int]
+    ) -> dict[int, list[promociones.Regla]]:
+        """Las promociones de taquilla de las funciones que la caja tiene en
+        reserva: sin red el equipo las aplica con la misma regla (PR1)."""
+        if not performance_ids:
+            return {}
+        evento = await self.db.get(Event, caja.event_id)
+        zh = await self.db.scalar(
+            select(Venue.zona_horaria).where(Venue.id == evento.venue_id)
+        )
+        funciones = list(
+            (
+                await self.db.scalars(
+                    select(Performance).where(Performance.id.in_(performance_ids))
+                )
+            ).all()
+        )
+        return await promociones.reglas_por_funcion(
+            self.db, evento, funciones, zh, promociones.TAQUILLA
+        )
 
     async def soltar_reserva(
         self, caja: CajaDeTaquilla, usuario: User, performance_id: int | None = None
@@ -1385,6 +1452,8 @@ class TaquillaService:
                 {"zona": p.zona_snap, "asiento": p.asiento_snap, "precio": p.importe}
                 for p in partidas
             ],
+            "descuento": orden.descuento,
+            "promocion": orden.promocion_snap,
             "total": venta.total,
             "iva": orden.iva,
             "iva_pct": orden.iva_pct_snap,

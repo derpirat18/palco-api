@@ -32,6 +32,20 @@ class MedicionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PromocionPublicaResponse(BaseModel):
+    """Promocion (PR1) de una funcion: lo que el comprador necesita para
+    ver su descuento antes de pagar. Al cobrar decide el servidor."""
+
+    id: int
+    nombre: str
+    tipo: Literal["2x1", "porcentaje"]
+    porcentaje: Decimal | None
+    # Apagado: solo boletos de adulto.
+    todos_los_tipos: bool
+    # Zonas donde aplica; None: todas.
+    zonas: list[int] | None
+
+
 class FuncionPublicaResponse(BaseModel):
     id: int
     uuid: UUID
@@ -43,6 +57,7 @@ class FuncionPublicaResponse(BaseModel):
     # Lo que paga el comprador por el boleto mas barato libre: sin cargos
     # encima, el precio anunciado es el precio final (ADR 0012).
     precio_desde: Decimal | None
+    promociones: list[PromocionPublicaResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 

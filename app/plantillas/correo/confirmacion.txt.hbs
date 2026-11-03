@@ -16,7 +16,7 @@ RESUMEN DE TU ORDEN ({{num_boletos}})
 {{#if pago}}
 RESUMEN DE PAGO
 {{#each pago.partidas}}- {{descripcion}}: {{importe}}
-{{/each}}{{#if pago.descuento}}- Descuento: −{{pago.descuento}}
+{{/each}}{{#if pago.descuento}}- Descuento{{#if pago.promocion}} ({{pago.promocion}}){{/if}}: −{{pago.descuento}}
 {{/if}}Subtotal: {{pago.subtotal}}
 IVA incluido ({{pago.iva_pct}}%): {{pago.iva}}
 Total (precio final, sin cargos): {{pago.total}} {{pago.moneda}}

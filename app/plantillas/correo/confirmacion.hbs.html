@@ -141,7 +141,7 @@
           <td align="right" valign="top" style="padding:6px 0;white-space:nowrap;">{{importe}}</td>
         </tr>
         {{/each}}
-        {{#if pago.descuento}}<tr><td style="padding:6px 0;">Descuento</td><td align="right" style="padding:6px 0;white-space:nowrap;">−{{pago.descuento}}</td></tr>{{/if}}
+        {{#if pago.descuento}}<tr><td style="padding:6px 0;">Descuento{{#if pago.promocion}} · {{pago.promocion}}{{/if}}</td><td align="right" style="padding:6px 0;white-space:nowrap;">−{{pago.descuento}}</td></tr>{{/if}}
         <tr><td colspan="2" style="padding:8px 0 0;"><div style="border-top:1px solid #E2E8F0;font-size:0;line-height:0;">&nbsp;</div></td></tr>
         <tr><td style="padding:6px 0;color:#565C75;font-size:13px;">Subtotal</td><td align="right" style="padding:6px 0;color:#565C75;font-size:13px;white-space:nowrap;">{{pago.subtotal}}</td></tr>
         <tr><td style="padding:0 0 6px;color:#565C75;font-size:13px;">IVA incluido ({{pago.iva_pct}}%)</td><td align="right" style="padding:0 0 6px;color:#565C75;font-size:13px;white-space:nowrap;">{{pago.iva}}</td></tr>

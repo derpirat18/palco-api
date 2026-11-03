@@ -13,6 +13,7 @@ from app.api.v1 import (
     cuenta,
     health,
     inventory,
+    promociones,
     publico,
     reportes,
     taquilla,
@@ -36,3 +37,4 @@ api_router.include_router(acceso.router)
 api_router.include_router(alertas.router)
 api_router.include_router(taquilla.router)
 api_router.include_router(reportes.router)
+api_router.include_router(promociones.router)

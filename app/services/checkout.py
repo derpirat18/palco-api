@@ -59,6 +59,7 @@ from app.models.inventory import InventoryMove, PerformanceSeat
 from app.models.outbox import OutboxEvent
 from app.models.payments import PaymentEvent
 from app.models.sales import Customer, Order, OrderItem, Ticket
+from app.services import promociones
 from app.services.apartados import MARGEN_ESPEJO_SEGUNDOS, ApartadoService
 from app.services.consentimientos import ConsentimientoInvalido, ConsentimientoService
 from app.services.holds import HoldService
@@ -232,7 +233,7 @@ class CheckoutService:
         telefono = normalizar_telefono(comprador.telefono)
 
         ahora = await self._ahora()
-        _, evento, cliente = await self.apartados.funcion_a_la_venta(
+        funcion, evento, cliente = await self.apartados.funcion_a_la_venta(
             performance_id, ahora
         )
 
@@ -295,7 +296,7 @@ class CheckoutService:
         # desglosa y se congela la tasa, para facturar sin recalcular.
         iva = iva_de(evento)
         tarifas = await tarifas_de(self.db, performance_id, iva)
-        partidas = []
+        detalle = []
         for (
             ps_id,
             final,
@@ -311,6 +312,26 @@ class CheckoutService:
             # Precio de nino o adulto mayor de la zona (TB); adulto, el de
             # la butaca.
             precio = tarifas.precio(tipo, zone_id, final, propio, f"{zona} {asiento}")
+            detalle.append((ps_id, zona, zone_id, asiento, tipo, precio))
+
+        # Promociones (PR1): la misma calculadora que la taquilla y la vista
+        # del comprador. Lo que decide es esto, no lo que vio el front.
+        promo = await promociones.cotizar(
+            self.db,
+            await promociones.reglas_de(self.db, funcion, evento, promociones.LINEA),
+            performance_id,
+            [promociones.Lugar(d[0], d[2], d[4], d[5]) for d in detalle],
+            ps_ids,
+        )
+        if promo.faltan:
+            raise promociones.ParIncompleto(
+                promociones.mensaje_de_par(promo, {d[2]: d[1] for d in detalle}),
+                {"zonas": list(promo.faltan), "promocion": promo.regla.nombre},
+            )
+        partidas = []
+        for ps_id, zona, _zone_id, asiento, tipo, precio in detalle:
+            descuento = promo.descuento_de(ps_id)
+            importe = precio - descuento
             partidas.append(
                 OrderItem(
                     performance_seat_id=ps_id,
@@ -318,17 +339,20 @@ class CheckoutService:
                     asiento_snap=asiento_con_tipo(asiento, tipo),
                     tipo=tipo,
                     precio_unitario=precio,
-                    iva=iva.iva_contenido(precio),
-                    descuento=CERO,
-                    importe=precio,
+                    iva=iva.iva_contenido(importe),
+                    descuento=descuento,
+                    importe=importe,
+                    comision_pct_snap=promo.comision_de(ps_id),
                 )
             )
-        # Como en una factura: subtotal sin IVA + IVA = total. El total es la
-        # suma exacta de los precios al publico, que es lo que cobra Stripe;
-        # el subtotal sale de restarle el IVA desglosado partida por partida.
+        # Como en una factura: subtotal sin IVA + IVA - descuento = total. El
+        # total es la suma exacta de lo que se cobra por cada boleto, que es
+        # lo que cobra Stripe; el IVA se desglosa de lo que realmente se
+        # cobra, partida por partida.
         total = sum((p.importe for p in partidas), CERO)
         iva_total = sum((p.iva for p in partidas), CERO)
-        subtotal = total - iva_total
+        descuento_total = sum((p.descuento for p in partidas), CERO)
+        subtotal = total + descuento_total - iva_total
         if total < TOTAL_MINIMO:
             raise OrdenSinCobro(
                 "Una compra con pago debe ser de al menos $10.00.",
@@ -344,10 +368,12 @@ class CheckoutService:
             estado=PENDIENTE,
             subtotal=subtotal,
             iva=iva_total,
-            descuento=CERO,
+            descuento=descuento_total,
             total=total,
             moneda=MONEDA,
             comision_pct_snap=cliente.comision_pct,
+            promocion_id=promo.regla.id if promo.regla else None,
+            promocion_snap=promo.regla.nombre if promo.regla else None,
             iva_pct_snap=iva.pct,
             idempotency_key=secrets.token_hex(16),
             expira_en=expira_en,

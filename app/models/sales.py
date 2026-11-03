@@ -197,6 +197,12 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
     telefono_snap: Mapped[str | None] = mapped_column(String(16))
     # BOL1: con que se pago, "Visa •••• 4242". Nunca el numero completo.
     tarjeta_snap: Mapped[str | None] = mapped_column(String(40))
+    # PR1: la promocion que se aplico y su nombre tal como estaba. Editarla o
+    # apagarla despues no cambia esta compra.
+    promocion_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("promociones.id", ondelete="RESTRICT")
+    )
+    promocion_snap: Mapped[str | None] = mapped_column(String(60))
 
     comprador: Mapped["Customer"] = relationship(back_populates="ordenes")
     partidas: Mapped[list["OrderItem"]] = relationship(back_populates="orden")
@@ -215,6 +221,11 @@ class Order(Base, PKMixin, UUIDPublicoMixin, TimestampMixin):
         ),
         Index("ix_orders_performance_estado", "performance_id", "estado"),
         Index("ix_orders_customer", "customer_id"),
+        Index(
+            "ix_orders_promocion",
+            "promocion_id",
+            postgresql_where=text("promocion_id IS NOT NULL"),
+        ),
         # Un apartado, a lo mas una orden esperando pago. Dos ordenes vivas
         # sobre el mismo apartado son dos cobros posibles por las mismas
         # butacas.
@@ -270,6 +281,10 @@ class OrderItem(Base, PKMixin):
     tipo: Mapped[str] = mapped_column(
         String(12), nullable=False, default="adulto", server_default="adulto"
     )
+
+    # PR1: comision de PSD de este boleto cuando la promocion trae una
+    # especial. Nula: la de la orden (`orders.comision_pct_snap`).
+    comision_pct_snap: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
 
     # Se pone en true al cancelar o reembolsar. Es lo que libera la butaca
     # para el indice unico parcial de abajo.

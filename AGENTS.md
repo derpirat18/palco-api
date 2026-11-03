@@ -121,7 +121,7 @@ ningún QR, ni siquiera el de la liga: la liga es la llave de los boletos.
 ## Reportes, Inicio y buscador (RP3)
 
 - `app/services/reportes.py`: Ventas, Taquilla y cortes, Asistencia, Cortesías,
-  Compradores y Ocupación, con filtros y periodo por fecha de compra o de la
+  Compradores, Ocupación y Promociones, con filtros y periodo por fecha de compra o de la
   función (días en hora del centro). `acotar` decide qué ve cada quien: PSD
   todo, el organizador lo suyo, el jefe de taquilla solo Taquilla y cortes de
   sus eventos. Se suma lo congelado en cada compra; nunca se recalcula.
@@ -132,6 +132,22 @@ ningún QR, ni siquiera el de la liga: la liga es la llave de los boletos.
   cualquier reporte y buscar un correo quedan en `data_access_log.filtros`.
 - `app/services/inicio.py`: la pantalla de Inicio y el buscador del panel
   (`/panel/inicio`, `/panel/buscar`), solo PSD y organizador.
+
+## Promociones (PR1)
+
+- `app/services/promociones.py` es la única calculadora: la usan el cobro en
+  línea (`checkout.iniciar`), la taquilla (`taquilla.vender`) y lo público
+  (`FuncionPublica.promociones`). Nunca se calcula un descuento en otro lado.
+- 2x1 en pares por zona (el más barato de cada par, sin costo) y sin impares
+  (`par_incompleto`), salvo el último lugar libre de la zona; porcentaje al
+  centavo; gana la de mayor descuento. Cuenta el día de la función a la hora
+  del recinto. Las cortesías nunca llevan promoción.
+- Sin red se respeta la que aplicó el equipo (`VenderRequest.promocion_id`).
+- Se congela en la orden (`promocion_id`, `promocion_snap`) y por boleto
+  (`descuento`, `comision_pct_snap`). Los reportes usan
+  `coalesce(order_items.comision_pct_snap, orders.comision_pct_snap)`.
+- Panel en `/promociones` (PSD y organizador; lo ajeno como inexistente).
+  Solo PSD cambia `comision_pct`. Una usada no se borra: se apaga. ADR 0022.
 
 ## Stack
 
@@ -176,6 +192,7 @@ revisan con lupa:
   capturas sin que nadie lo vea (ADR 0011)
 - `app/services/taquilla.py`: venta en el lugar con dinero en mano;
   vende, corrige y cuadra cajas sobre el mismo inventario
+- `app/services/promociones.py`: cuánto se descuenta en línea y en taquilla
 - Cualquier cosa que toque cobros o emisión de boletos
 
 Nunca debilitar ni marcar como `skip` las pruebas de

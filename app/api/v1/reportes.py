@@ -126,13 +126,6 @@ async def catalogo(db: DB, usuario: UsuarioActual) -> CatalogoResponse:
                 filtros=[],
                 por_omision="compra",
             ),
-            DefinicionResponse(
-                tipo="promociones",
-                titulo="Promociones",
-                pregunta="¿Cuánto vendió cada promoción?",
-                filtros=[],
-                por_omision="compra",
-            ),
         ]
     return CatalogoResponse(reportes=[resp(d) for d in hay], proximamente=proximos)
 

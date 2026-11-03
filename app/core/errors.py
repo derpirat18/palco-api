@@ -49,6 +49,7 @@ ORGANIZADOR_NO_EXISTE = "No encontramos este organizador."
 EVENTO_NO_EXISTE = "No encontramos este evento."
 FUNCION_NO_EXISTE = "No encontramos esta función."
 CUENTA_NO_EXISTE = "No encontramos esa cuenta."
+PROMOCION_NO_EXISTE = "No encontramos esta promoción."
 
 
 class EventoMovido(ErrorDeDominio):
