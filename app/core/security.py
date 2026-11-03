@@ -66,6 +66,7 @@ def crear_access_token(
     rol: str,
     client_id: int | None = None,
     expira_en: timedelta | None = None,
+    version: int = 0,
 ) -> str:
     """Firma un token de acceso.
 
@@ -84,6 +85,8 @@ def crear_access_token(
         "iat": ahora,
         "exp": expira,
         "tipo": "access",
+        # users.sesion_version: si sube, este token deja de servir.
+        "v": version,
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITMO)
 
@@ -110,7 +113,9 @@ SESION_COMPRADOR = timedelta(days=30)
 TIPO_COMPRADOR = "comprador"
 
 
-def crear_token_comprador(customer_uuid: str, version: int) -> str:
+def crear_token_comprador(
+    customer_uuid: str, version: int, dura: timedelta = SESION_COMPRADOR
+) -> str:
     """Token del comprador. Otro `tipo` que el del personal: uno no sirve
     donde va el otro."""
     ahora = datetime.now(UTC)
@@ -118,7 +123,7 @@ def crear_token_comprador(customer_uuid: str, version: int) -> str:
         "sub": customer_uuid,
         "v": version,
         "iat": ahora,
-        "exp": ahora + SESION_COMPRADOR,
+        "exp": ahora + dura,
         "tipo": TIPO_COMPRADOR,
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITMO)

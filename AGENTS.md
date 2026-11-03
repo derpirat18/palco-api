@@ -222,7 +222,20 @@ compara roles ni `client_id` a mano.
   (constantes en `app/core/errors.py`).
 
 El usuario se relee de la base en cada petición, no se confía solo en el
-token: así desactivar una cuenta la revoca al instante.
+token: así desactivar una cuenta la revoca al instante. El token lleva
+`v = users.sesion_version`: subirla (recuperar la contraseña, una temporal
+nueva) cierra todas sus sesiones.
+
+Una sola puerta para entrar (`/entrar` en el front): el comprador con código,
+el equipo con contraseña (`/auth/login`), y la opción de contraseña está a la
+vista de todos para no revelar qué correos son del equipo. Recuperar la
+contraseña (`/auth/recuperar`, `/auth/recuperar/confirmar`) usa el código de
+`app/services/cuenta.py` con el propósito `contrasena` y responde igual sea o
+no del equipo el correo. Quien entra con contraseña abre también su sesión de
+comprador (`/publico/cuenta/desde-equipo`, dura lo que la del equipo) solo si
+`users.email_verificado_en` ya tiene fecha: la cuenta la creó alguien más con
+el correo que escribió, y hasta que pruebe que es suyo (un código) no ve las
+compras de ese correo.
 
 Lo ajeno responde **idéntico** a lo inexistente: mismo 404, mismo cuerpo.
 Distinguirlos permite descubrir qué clientes hay sondeando identificadores.

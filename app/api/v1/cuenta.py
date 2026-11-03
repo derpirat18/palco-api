@@ -5,7 +5,7 @@ del personal: no abre el panel, y el del panel no abre esto.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
@@ -15,7 +15,9 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, Field
 from redis.asyncio.client import Redis
 
-from app.api.deps import DB, esquema_bearer
+from app.api.deps import DB, UsuarioActual, esquema_bearer
+from app.core.config import settings
+from app.core.errors import ErrorDeDominio
 from app.core.redis import redis_client
 from app.core.security import (
     SESION_COMPRADOR,
@@ -35,6 +37,11 @@ from app.services.verificacion import Verificacion, verificar_persona
 router = APIRouter(prefix="/publico/cuenta", tags=["cuenta"])
 log = logging.getLogger("palco.cuenta")
 por_ip = limite("cuenta")
+
+
+class CorreoSinConfirmar(ErrorDeDominio):
+    codigo = "correo_sin_confirmar"
+    http_status = 409
 
 
 def get_redis_cuenta() -> Redis:
@@ -210,6 +217,24 @@ async def entrar(datos: EntrarRequest, db: DB, redis: RedisCuenta) -> SesionResp
     _, token = await svc.entrar(db, correo)
     await db.commit()
     return _sesion(token)
+
+
+@router.post("/desde-equipo", response_model=SesionResponse)
+async def desde_equipo(db: DB, usuario: UsuarioActual) -> SesionResponse:
+    """Quien entro con su contrasena del equipo ve tambien sus boletos, si ya
+    probo que el correo es suyo (con un codigo). Su cuenta la creo alguien
+    mas con el correo que escribio: sin probarlo no ve compras ajenas."""
+    if usuario.email_verificado_en is None:
+        raise CorreoSinConfirmar(
+            "Para ver tus boletos, confirma tu correo con un código.",
+            {"correo": usuario.email},
+        )
+    # Lo que dura la sesion del equipo, no 30 dias: puede ser la computadora
+    # de la taquilla.
+    dura = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    _, token = await svc.entrar(db, usuario.email, dura)
+    await db.commit()
+    return SesionResponse(token=token, expira_en_segundos=int(dura.total_seconds()))
 
 
 @router.post("/salir-de-todos", response_model=SesionResponse)

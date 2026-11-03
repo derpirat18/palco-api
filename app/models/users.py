@@ -13,6 +13,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Integer,
     String,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -34,6 +35,17 @@ class User(Base, PKMixin, TimestampMixin):
     mfa_secret: Mapped[str | None] = mapped_column(String(64))
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     ultimo_acceso: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Viaja en el token ("v"): subirla cierra todas sus sesiones (al
+    # recuperar la contrasena o cuando PSD le pone una temporal).
+    sesion_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    # Cuando probo que el correo es suyo (un codigo que le llego). A estas
+    # cuentas las crea alguien mas con el correo que escribio: hasta probarlo
+    # no ven las compras de ese correo.
+    email_verificado_en: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     __table_args__ = (
         CheckConstraint(

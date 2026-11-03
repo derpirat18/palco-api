@@ -110,5 +110,7 @@ class UsuariosService:
         usuario = await self.obtener(usuario_id)
         password = password_temporal()
         usuario.password_hash = hash_password(password)
+        # La temporal nueva cierra las sesiones que tenia abiertas.
+        usuario.sesion_version += 1
         await self.db.flush()
         return usuario, password

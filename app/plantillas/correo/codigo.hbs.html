@@ -25,7 +25,7 @@
       <a href="{{inicio_url}}"><img src="{{assets_url}}/logo-psd-blanco.png" width="92" height="30" alt="{{marca}}" style="width:92px;height:auto;"></a>
     </td></tr>
     <tr><td class="px" style="padding:36px 40px 8px;">
-      <h1 style="margin:0;font-size:22px;line-height:28px;font-weight:600;">{{#if cambiar}}Tu código para cambiar tu correo{{else}}Tu código para entrar{{/if}}</h1>
+      <h1 style="margin:0;font-size:22px;line-height:28px;font-weight:600;">{{#if cambiar}}Tu código para cambiar tu correo{{else}}{{#if contrasena}}Tu código para cambiar tu contraseña{{else}}Tu código para entrar{{/if}}{{/if}}</h1>
       <p style="margin:8px 0 0;font-size:15px;line-height:22px;color:#565C75;">Escríbelo en la página donde lo pediste. Vence en {{minutos}} minutos.</p>
     </td></tr>
     <tr><td class="px" align="center" style="padding:20px 40px 28px;">

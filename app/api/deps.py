@@ -61,6 +61,9 @@ async def get_current_user(
         raise TokenInvalido(
             "Tu cuenta no está activa. Si crees que es un error, escríbenos."
         )
+    # Cambio su contrasena (o se la cambiaron): las sesiones de antes terminan.
+    if payload.get("v", 0) != usuario.sesion_version:
+        raise TokenInvalido("Tu sesión terminó. Vuelve a iniciar sesión.")
 
     return usuario
 

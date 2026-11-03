@@ -28,7 +28,7 @@ import json
 import logging
 import secrets
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from redis.asyncio.client import Redis
@@ -39,7 +39,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import ErrorDeDominio
-from app.core.security import TokenInvalido, crear_token_comprador
+from app.core.security import (
+    SESION_COMPRADOR,
+    TokenInvalido,
+    crear_token_comprador,
+)
 from app.models.base import Base, EstadoOrden, EstadoTransferencia
 from app.models.catalog import Event, Performance, Venue
 from app.models.sales import Customer, Order, OrderItem, Ticket, Transfer
@@ -54,6 +58,9 @@ CODIGOS_POR_RATO = 3
 RATO = 15 * 60
 CODIGOS_AL_DIA = 10
 ENTRAR, CAMBIAR = "entrar", "cambiar"
+# Recuperar la contrasena del equipo (PSD, organizadores, personal): el mismo
+# codigo al correo, con otro proposito para que uno no sirva por el otro.
+CONTRASENA = "contrasena"
 
 
 class CodigoInvalido(ErrorDeDominio):
@@ -166,9 +173,12 @@ async def comprobar_codigo(
 def correo_del_codigo(para: str, codigo: str, proposito: str) -> Mensaje:
     front = settings.FRONT_URL.rstrip("/")
     cambiar = proposito == CAMBIAR
+    contrasena = proposito == CONTRASENA
     asunto = (
         f"{codigo} es tu código para cambiar tu correo"
         if cambiar
+        else f"{codigo} es tu código para cambiar tu contraseña"
+        if contrasena
         else f"{codigo} es tu código para entrar a {settings.MARCA}"
     )
     datos = {
@@ -176,6 +186,7 @@ def correo_del_codigo(para: str, codigo: str, proposito: str) -> Mensaje:
         "marca": settings.MARCA,
         "codigo": codigo,
         "cambiar": cambiar,
+        "contrasena": contrasena,
         "minutos": VIDA_DEL_CODIGO // 60,
         "inicio_url": f"{front}/",
         "assets_url": f"{front}/img/correo",
@@ -196,7 +207,9 @@ def correo_del_codigo(para: str, codigo: str, proposito: str) -> Mensaje:
 # --------------------------------------------------------------------------
 
 
-async def entrar(db: AsyncSession, correo: str) -> tuple[Customer, str]:
+async def entrar(
+    db: AsyncSession, correo: str, dura: timedelta = SESION_COMPRADOR
+) -> tuple[Customer, str]:
     """Despues de comprobar el codigo: el comprador (nuevo o de antes) y su token."""
     await db.execute(
         pg_insert(Customer)
@@ -212,9 +225,21 @@ async def entrar(db: AsyncSession, correo: str) -> tuple[Customer, str]:
         c.email_verificado_en = func.now()
     if c.cuenta_activada_en is None:
         c.cuenta_activada_en = func.now()
+    # Si el correo es tambien de una cuenta del equipo, ya probo que es suyo.
+    await correo_probado_del_equipo(db, correo)
     await db.flush()
     await db.refresh(c)
-    return c, crear_token_comprador(str(c.uuid), c.sesion_version)
+    return c, crear_token_comprador(str(c.uuid), c.sesion_version, dura)
+
+
+async def correo_probado_del_equipo(db: AsyncSession, correo: str) -> None:
+    from app.models.users import User
+
+    await db.execute(
+        update(User)
+        .where(User.email == correo, User.email_verificado_en.is_(None))
+        .values(email_verificado_en=func.now())
+    )
 
 
 async def comprador_del_token(db: AsyncSession, payload: dict) -> Customer:
