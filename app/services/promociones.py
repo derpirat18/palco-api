@@ -676,6 +676,9 @@ def valor_en_texto(p: Promocion) -> str:
 
 async def vista(db: AsyncSession, promo: Promocion) -> dict:
     """Una promocion como la pinta el panel."""
+    # Aqui adentro: metricas importa el escaner, que ya importa este modulo.
+    from app.services.metricas import promocion_del_mes
+
     filas = (
         await db.execute(
             select(PromocionEvento.event_id, PromocionEvento.zone_id).where(
@@ -754,6 +757,8 @@ async def vista(db: AsyncSession, promo: Promocion) -> dict:
         "funciones_proximas": previa["total_funciones"],
         "actualizada_por": autor,
         "actualizado_en": promo.actualizado_en,
+        # Bloque 14: lo del mes, para ver si la promocion sirve o solo regala.
+        "mes": await promocion_del_mes(db, promo.id),
     }
 
 

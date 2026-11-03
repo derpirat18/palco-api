@@ -561,3 +561,16 @@ Reglas para escribir un `mensaje`:
 2. Si cambió el esquema, migración generada y revisada.
 3. Si la decisión fue de arquitectura, un ADR en `docs/adr/`.
 4. Decir qué quedó fuera y qué supuestos se tomaron.
+
+## Métricas del panel (bloque 14)
+
+- `app/services/metricas.py` y `GET /panel/metricas/...` (`app/api/v1/metricas.py`): solo
+  lectura, sin tablas nuevas. Eventos (próxima función, vendidos de cuántos, venta y cómo
+  va), funciones de un evento (con días que faltan y "va floja") y una función (vendidos por
+  zona, por canal, por tipo, venta de 7 días y la puerta: entraron, rechazos y, al terminar,
+  llegadas cada 15 minutos).
+- PSD ve todo; el organizador solo lo suyo y lo ajeno responde igual que lo que no existe;
+  el personal de acceso no tiene estas pantallas (403). Pruebas en `tests/test_metricas.py`.
+- "Vendidos" son lugares vendidos (sin cortesías); "venta" es lo cobrado (`importe`, ya con
+  descuento e IVA), sin cortesías. Las promociones traen `mes` (boletos, descontado y vendido
+  del mes por fecha de compra).

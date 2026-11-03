@@ -81,6 +81,12 @@ class FuncionDePromocion(BaseModel):
     zonas: str
 
 
+class MesDePromocion(BaseModel):
+    boletos: int
+    descontado: Decimal
+    vendido: Decimal
+
+
 class PromocionResponse(BaseModel):
     id: int
     client_id: int
@@ -105,6 +111,7 @@ class PromocionResponse(BaseModel):
     funciones_proximas: int
     actualizada_por: str | None
     actualizado_en: datetime
+    mes: MesDePromocion
 
 
 class ConflictoResponse(BaseModel):
