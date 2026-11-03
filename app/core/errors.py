@@ -50,6 +50,7 @@ EVENTO_NO_EXISTE = "No encontramos este evento."
 FUNCION_NO_EXISTE = "No encontramos esta función."
 CUENTA_NO_EXISTE = "No encontramos esa cuenta."
 PROMOCION_NO_EXISTE = "No encontramos esta promoción."
+RECINTO_NO_EXISTE = "No encontramos ese recinto."
 
 
 class EventoMovido(ErrorDeDominio):

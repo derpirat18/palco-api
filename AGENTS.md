@@ -574,3 +574,18 @@ Reglas para escribir un `mensaje`:
 - "Vendidos" son lugares vendidos (sin cortesías); "venta" es lo cobrado (`importe`, ya con
   descuento e IVA), sin cortesías. Las promociones traen `mes` (boletos, descontado y vendido
   del mes por fecha de compra).
+
+## Métricas de administración (bloque 15)
+
+- Mismo servicio y router que el bloque 14 (`app/services/metricas.py`, `/panel/metricas/...`),
+  solo lectura y sin tablas nuevas.
+- `recintos` y `recintos/{id}`: eventos, funciones, ocupación promedio (vendidos + cortesías
+  entre lugares, como el reporte de Ocupación, promediada entre las funciones que ya pasaron) y
+  próxima función. Los recintos son de todos, pero el organizador solo cuenta sus eventos. Por
+  mapa, `en_uso` cuenta las funciones de todos (un mapa con funciones ya no se cambia).
+- `organizadores` (solo PSD): venta del mes por fecha de compra (hora del centro, sin
+  cortesías) y la comisión de PSD con `coalesce(order_items.comision_pct_snap,
+  orders.comision_pct_snap)` redondeada por boleto, igual que el reporte de Ventas.
+- `cuentas`: eventos asignados y la última función que escaneó cada quien (lecturas con su
+  `user_id`: cuántas dejó pasar y cuántas rechazó). PSD ve todas; el organizador, su personal
+  de acceso. El personal de acceso no tiene estas pantallas (403).

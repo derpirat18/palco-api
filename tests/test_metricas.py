@@ -16,7 +16,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select, update
 
-from app.models.catalog import Performance
+from app.models.catalog import Event, Performance
 from app.models.sales import Scan, Ticket
 from app.services import metricas
 from tests.test_catalog import API
@@ -149,3 +149,108 @@ async def test_como_va():
     )
     assert metricas.dias_en_texto(1) == "Mañana"
     assert metricas.dias_en_texto(3) == "Faltan 3 días"
+
+
+# --------------------------------------------------------------------------
+# Administracion (bloque 15)
+# --------------------------------------------------------------------------
+
+
+async def test_recintos_cada_quien_sus_numeros(db, cliente_http, usuarios, venta):  # noqa: F811
+    f = await db.get(Performance, venta.performance_id)
+    ev = await db.get(Event, f.event_id)
+    vid = ev.venue_id
+    r = await cliente_http.get(f"{M}/recintos", headers=de(usuarios, "org_a"))
+    assert r.status_code == 200, r.text
+    mio = next(x for x in r.json()["recintos"] if x["venue_id"] == vid)
+    assert mio["eventos"] >= 1 and mio["funciones"] >= 1 and mio["mapas"] >= 1
+    assert mio["proxima"] is not None and mio["ocupacion"] is None
+
+    # El recinto es de todos, pero el organizador B no ve los numeros de A.
+    r = await cliente_http.get(f"{M}/recintos", headers=de(usuarios, "org_b"))
+    ajeno = next(x for x in r.json()["recintos"] if x["venue_id"] == vid)
+    assert ajeno["eventos"] == 0 and ajeno["funciones"] == 0
+    r = await cliente_http.get(f"{M}/recintos/{vid}", headers=de(usuarios, "org_b"))
+    assert r.json()["eventos"] == 0
+    assert all(m["funciones"] == 0 for m in r.json()["mapas_uso"])
+    # ...pero sabe que el mapa ya se usa: un mapa con funciones no se cambia.
+    assert any(m["en_uso"] for m in r.json()["mapas_uso"])
+
+    # La funcion ya paso: cuenta en la ocupacion promedio.
+    await db.execute(
+        update(Performance)
+        .where(Performance.id == f.id)
+        .values(inicia_en=datetime(2026, 1, 10, 22, 0, tzinfo=UTC))
+    )
+    await db.commit()
+    r = await cliente_http.get(f"{M}/recintos/{vid}", headers=de(usuarios, "admin"))
+    d = r.json()
+    assert d["funciones_pasadas"] >= 1 and Decimal(d["ocupacion"]) > 0
+    no_existe = await cliente_http.get(
+        f"{M}/recintos/999999", headers=de(usuarios, "admin")
+    )
+    assert no_existe.status_code == 404
+    r = await cliente_http.get(f"{M}/recintos", headers=de(usuarios, "acceso"))
+    assert r.status_code == 403
+
+
+async def test_organizadores_venta_y_comision_del_mes(
+    db,
+    cliente_http,
+    usuarios,
+    venta,  # noqa: F811
+):
+    r = await cliente_http.get(f"{M}/organizadores", headers=de(usuarios, "admin"))
+    assert r.status_code == 200, r.text
+    d = r.json()
+    a = next(
+        o for o in d["organizadores"] if o["client_id"] == usuarios["org_a"].client_id
+    )
+    assert Decimal(a["venta_mes"]) == venta.total
+    pct = venta.comision_pct_snap
+    assert Decimal(a["comision_mes"]) > 0
+    assert abs(Decimal(a["comision_mes"]) - venta.total * pct / 100) <= Decimal("0.02")
+    assert Decimal(d["venta_mes"]) >= venta.total and d["con_venta"] >= 1
+    assert a["cuentas"] >= 2 and a["eventos"] >= 1
+    # Solo PSD: es el acuerdo comercial de todos.
+    for quien in ("org_a", "acceso"):
+        r = await cliente_http.get(f"{M}/organizadores", headers=de(usuarios, quien))
+        assert r.status_code == 403
+
+
+async def test_cuentas_escaneos_de_su_ultima_funcion(
+    db,
+    cliente_http,
+    usuarios,
+    venta,  # noqa: F811
+):
+    pid = venta.performance_id
+    puerta = usuarios["acceso"]
+    momento = datetime.now(UTC)
+    db.add_all(
+        [
+            Scan(
+                performance_id=pid,
+                user_id=puerta.id,
+                resultado=r,
+                escaneado_en=momento + timedelta(seconds=i),
+                client_scan_id=f"c{i}",
+            )
+            for i, r in enumerate(["valido", "valido", "duplicado", "deshecho"])
+        ]
+    )
+    await db.commit()
+    r = await cliente_http.get(f"{M}/cuentas", headers=de(usuarios, "org_a"))
+    assert r.status_code == 200, r.text
+    filas = {c["user_id"]: c for c in r.json()["cuentas"]}
+    # El organizador solo ve su personal de acceso.
+    assert set(filas) <= {u.id for u in usuarios.values() if u.rol == "acceso"}
+    u = filas[puerta.id]["ultima_funcion"]
+    assert u["performance_id"] == pid
+    assert u["escaneos"] == 2 and u["rechazos"] == 1 and u["evento"]
+    r = await cliente_http.get(f"{M}/cuentas", headers=de(usuarios, "org_b"))
+    assert puerta.id not in {c["user_id"] for c in r.json()["cuentas"]}
+    r = await cliente_http.get(f"{M}/cuentas", headers=de(usuarios, "admin"))
+    assert puerta.id in {c["user_id"] for c in r.json()["cuentas"]}
+    r = await cliente_http.get(f"{M}/cuentas", headers=de(usuarios, "acceso"))
+    assert r.status_code == 403

@@ -8,6 +8,14 @@ Cada numero va junto a la decision que ayuda a tomar:
   vende, venta por dia, y la puerta: cuantos entraron y, al terminar, como
   llegaron (cada 15 minutos).
 
+Administracion (bloque 15):
+
+- Recintos: eventos, funciones, ocupacion promedio de las que ya pasaron y
+  proxima funcion. El recinto es de todos; el organizador solo cuenta lo suyo.
+- Organizadores (solo PSD): venta y comision de PSD del mes.
+- Cuentas: cuantos eventos tiene asignados y lo que escaneo en su ultima
+  funcion.
+
 Quien ve que lo decide quien llama: PSD todo; el organizador solo lo suyo
 (`client_id`); el personal de acceso no tiene estas pantallas.
 
@@ -34,13 +42,13 @@ from app.models.base import (
     EstadoFuncion,
     EstadoOrden,
 )
-from app.models.catalog import Event, Performance, Seat, Venue, Zone
+from app.models.catalog import Client, Event, Performance, Seat, SeatMap, Venue, Zone
 from app.models.inventory import PerformanceSeat
 from app.models.sales import Order, OrderItem, Scan, Ticket
 from app.models.taquilla import VentaDeTaquilla
 from app.models.users import User
 from app.services.escaner import DESHECHO, FUERA_DE_HORARIO, VALIDO, horario_de_escaneo
-from app.services.reportes import _canal, _dinero, _local
+from app.services.reportes import _canal, _dinero, _local, _pct
 
 CERO = Decimal("0.00")
 # Una funcion "va floja" si faltan pocos dias y lleva poco vendido.
@@ -48,6 +56,7 @@ DIAS_PARA_AVISAR = 3
 FLOJA = Decimal("0.30")
 CASI_AGOTADO = Decimal("0.90")
 CUARTO = timedelta(minutes=15)
+CENTRO = ZoneInfo("America/Mexico_City")
 
 
 def _venta_viva():
@@ -475,9 +484,7 @@ async def _puerta(
 async def promocion_del_mes(db: AsyncSession, promocion_id: int) -> dict[str, Any]:
     """Boletos, descontado y vendido este mes (por fecha de compra, hora del
     centro de Mexico) con esa promocion."""
-    zona = ZoneInfo("America/Mexico_City")
-    hoy = datetime.now(zona)
-    inicio = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    inicio = _inicio_del_mes()
     boletos, descontado, vendido = (
         await db.execute(
             select(
@@ -490,7 +497,7 @@ async def promocion_del_mes(db: AsyncSession, promocion_id: int) -> dict[str, An
                 Order.promocion_id == promocion_id,
                 Order.estado == EstadoOrden.PAGADA.value,
                 OrderItem.anulado.is_(False),
-                Order.pagada_en >= inicio.astimezone(UTC),
+                Order.pagada_en >= inicio,
             )
         )
     ).one()
@@ -499,3 +506,316 @@ async def promocion_del_mes(db: AsyncSession, promocion_id: int) -> dict[str, An
         "descontado": str(_dinero(descontado)),
         "vendido": str(_dinero(vendido)),
     }
+
+
+def _inicio_del_mes(ahora: datetime | None = None) -> datetime:
+    """Dia 1 a las 00:00 en hora del centro, como instante UTC: lo mismo que
+    cuenta el reporte de Ventas por fecha de compra."""
+    hoy = (ahora or datetime.now(UTC)).astimezone(CENTRO)
+    return hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+
+
+def _rechazo():
+    """Lecturas que la puerta no dejo pasar (no cuentan las deshechas ni las
+    de fuera de horario, que no son del boleto)."""
+    return Scan.resultado.not_in((VALIDO, DESHECHO, FUERA_DE_HORARIO))
+
+
+# --------------------------------------------------------------------------
+# Recintos (bloque 15)
+# --------------------------------------------------------------------------
+
+
+async def _por_recinto(
+    db: AsyncSession, client_id: int | None, venue_id: int | None = None
+) -> dict[int, dict[str, Any]]:
+    """Eventos, funciones, ocupacion promedio y proxima funcion por recinto.
+
+    La ocupacion es (vendidos + cortesias) / lugares, como el reporte de
+    Ocupacion, promediada entre las funciones que ya pasaron: las que vienen
+    todavia se estan vendiendo y la bajarian sin decir nada."""
+    q = (
+        select(Event.venue_id, Event.id, Performance)
+        .join(Performance, Performance.event_id == Event.id, isouter=True)
+        .where(Event.estado != EstadoEvento.ARCHIVADO.value)
+    )
+    if client_id is not None:
+        q = q.where(Event.client_id == client_id)
+    if venue_id is not None:
+        q = q.where(Event.venue_id == venue_id)
+    filas = (await db.execute(q)).all()
+    vivas = [
+        f
+        for _, _, f in filas
+        if f is not None and f.estado != EstadoFuncion.CANCELADA.value
+    ]
+    ahora = datetime.now(UTC)
+    pasadas = [f for f in vivas if f.inicia_en < ahora]
+    conteos = await _conteos(db, [f.id for f in pasadas if f.inventario_generado])
+    salida: dict[int, dict[str, Any]] = {}
+    eventos_con_proxima: dict[int, set[int]] = defaultdict(set)
+    for vid, eid, f in filas:
+        r = salida.setdefault(
+            vid,
+            {
+                "eventos": set(),
+                "funciones": 0,
+                "pasadas": 0,
+                "ocupaciones": [],
+                "proxima": None,
+            },
+        )
+        r["eventos"].add(eid)
+        if f is None or f.estado == EstadoFuncion.CANCELADA.value:
+            continue
+        r["funciones"] += 1
+        if f.inicia_en < ahora:
+            r["pasadas"] += 1
+            c = conteos.get(f.id)
+            if c and c["capacidad"]:
+                r["ocupaciones"].append(
+                    _pct(c["vendidos"] + c["cortesias"], c["capacidad"])
+                )
+        else:
+            eventos_con_proxima[vid].add(eid)
+            if r["proxima"] is None or f.inicia_en < r["proxima"]:
+                r["proxima"] = f.inicia_en
+    for vid, r in salida.items():
+        ocup = r.pop("ocupaciones")
+        r["ocupacion"] = (
+            str((sum(ocup) / len(ocup)).quantize(Decimal("0.1"))) if ocup else None
+        )
+        r["eventos_proximos"] = len(eventos_con_proxima[vid])
+        r["eventos"] = len(r["eventos"])
+    return salida
+
+
+def _recinto(v: Venue, mapas: int, datos: dict[str, Any] | None) -> dict[str, Any]:
+    d = datos or {}
+    return {
+        "venue_id": v.id,
+        "mapas": mapas,
+        "eventos": d.get("eventos", 0),
+        "eventos_proximos": d.get("eventos_proximos", 0),
+        "funciones": d.get("funciones", 0),
+        "funciones_pasadas": d.get("pasadas", 0),
+        "ocupacion": d.get("ocupacion"),
+        "proxima": _local(d["proxima"], v.zona_horaria).isoformat()
+        if d.get("proxima")
+        else None,
+        "con_ubicacion": v.lat is not None and v.lng is not None,
+    }
+
+
+async def recintos(db: AsyncSession, client_id: int | None) -> list[dict[str, Any]]:
+    """Todos los recintos (son de todos); los numeros, de quien pregunta."""
+    venues = (await db.scalars(select(Venue))).all()
+    mapas = dict(
+        (
+            await db.execute(
+                select(SeatMap.venue_id, func.count(SeatMap.id)).group_by(
+                    SeatMap.venue_id
+                )
+            )
+        ).all()
+    )
+    datos = await _por_recinto(db, client_id)
+    return [_recinto(v, int(mapas.get(v.id, 0)), datos.get(v.id)) for v in venues]
+
+
+async def recinto(db: AsyncSession, v: Venue, client_id: int | None) -> dict[str, Any]:
+    """Un recinto y, por mapa, en cuantas funciones se usa. `en_uso` cuenta las
+    de todos: un mapa con funciones ya no se cambia, sean de quien sean."""
+    datos = (await _por_recinto(db, client_id, v.id)).get(v.id)
+    por_mapa: dict[int, dict[str, Any]] = {}
+    q = (
+        select(
+            SeatMap.id,
+            func.count(Performance.id),
+            func.count(Performance.id).filter(Event.client_id == client_id)
+            if client_id is not None
+            else func.count(Performance.id),
+        )
+        .select_from(SeatMap)
+        .outerjoin(Performance, Performance.seat_map_id == SeatMap.id)
+        .outerjoin(Event, Event.id == Performance.event_id)
+        .where(SeatMap.venue_id == v.id)
+        .group_by(SeatMap.id)
+    )
+    for mid, todas, mias in (await db.execute(q)).all():
+        por_mapa[mid] = {
+            "seat_map_id": mid,
+            "funciones": int(mias),
+            "en_uso": int(todas) > 0,
+        }
+    return {
+        **_recinto(v, len(por_mapa), datos),
+        "mapas_uso": sorted(por_mapa.values(), key=lambda m: m["seat_map_id"]),
+    }
+
+
+# --------------------------------------------------------------------------
+# Organizadores (bloque 15, solo PSD)
+# --------------------------------------------------------------------------
+
+
+async def organizadores(db: AsyncSession) -> dict[str, Any]:
+    """Venta del mes (lo cobrado, sin cortesias, por fecha de compra) y la
+    comision de PSD de esa venta, con la comision congelada en cada boleto
+    y redondeada por boleto, igual que el reporte de Ventas."""
+    inicio = _inicio_del_mes()
+    venta: dict[int, Decimal] = defaultdict(lambda: CERO)
+    comision: dict[int, Decimal] = defaultdict(lambda: CERO)
+    for cid, importe, pct in (
+        await db.execute(
+            select(
+                Event.client_id,
+                OrderItem.importe,
+                func.coalesce(OrderItem.comision_pct_snap, Order.comision_pct_snap),
+            )
+            .join(Order, Order.id == OrderItem.order_id)
+            .join(Performance, Performance.id == Order.performance_id)
+            .join(Event, Event.id == Performance.event_id)
+            .where(*_venta_viva(), Order.pagada_en >= inicio)
+        )
+    ).all():
+        venta[cid] += importe
+        comision[cid] += _dinero(importe * (pct or 0) / 100)
+    eventos = dict(
+        (
+            await db.execute(
+                select(Event.client_id, func.count(Event.id))
+                .where(Event.estado != EstadoEvento.ARCHIVADO.value)
+                .group_by(Event.client_id)
+            )
+        ).all()
+    )
+    cuentas = dict(
+        (
+            await db.execute(
+                select(User.client_id, func.count(User.id))
+                .where(User.client_id.is_not(None), User.activo.is_(True))
+                .group_by(User.client_id)
+            )
+        ).all()
+    )
+    clientes = (await db.scalars(select(Client))).all()
+    filas = [
+        {
+            "client_id": c.id,
+            "eventos": int(eventos.get(c.id, 0)),
+            "cuentas": int(cuentas.get(c.id, 0)),
+            "venta_mes": str(_dinero(venta[c.id])),
+            "comision_mes": str(_dinero(comision[c.id])),
+        }
+        for c in clientes
+    ]
+    return {
+        "mes": _local(inicio, "America/Mexico_City").strftime("%Y-%m"),
+        "venta_mes": str(_dinero(sum(venta.values(), CERO))),
+        "comision_mes": str(_dinero(sum(comision.values(), CERO))),
+        "con_venta": sum(1 for c in clientes if venta[c.id] > 0),
+        "organizadores": filas,
+    }
+
+
+# --------------------------------------------------------------------------
+# Cuentas (bloque 15)
+# --------------------------------------------------------------------------
+
+
+async def cuentas(
+    db: AsyncSession, client_id: int | None, rol: str | None = None
+) -> list[dict[str, Any]]:
+    """Por cuenta: eventos asignados y su ultima funcion escaneada (cuantos
+    dejo pasar y cuantos rechazo). Solo cuenta lo que escaneo esa persona."""
+    q = select(User.id)
+    if client_id is not None:
+        q = q.where(User.client_id == client_id)
+    if rol is not None:
+        q = q.where(User.rol == rol)
+    ids = [i for (i,) in (await db.execute(q)).all()]
+    if not ids:
+        return []
+    asignados = dict(
+        (
+            await db.execute(
+                select(AsignacionDeAcceso.user_id, func.count(AsignacionDeAcceso.id))
+                .where(AsignacionDeAcceso.user_id.in_(ids))
+                .group_by(AsignacionDeAcceso.user_id)
+            )
+        ).all()
+    )
+    # La ultima funcion de cada quien: la de su lectura mas reciente.
+    ultima = (
+        select(
+            Scan.user_id,
+            Scan.performance_id,
+            func.row_number()
+            .over(partition_by=Scan.user_id, order_by=Scan.escaneado_en.desc())
+            .label("n"),
+        )
+        .where(Scan.user_id.in_(ids))
+        .subquery()
+    )
+    funciones = dict(
+        (
+            await db.execute(
+                select(ultima.c.user_id, ultima.c.performance_id).where(ultima.c.n == 1)
+            )
+        ).all()
+    )
+    lecturas: dict[tuple[int, int], tuple[int, int]] = {}
+    datos_funcion: dict[int, tuple[Performance, Event, Venue]] = {}
+    if funciones:
+        for uid, pid, pasaron, rechazos in (
+            await db.execute(
+                select(
+                    Scan.user_id,
+                    Scan.performance_id,
+                    func.count(Scan.id).filter(Scan.resultado == VALIDO),
+                    func.count(Scan.id).filter(_rechazo()),
+                )
+                .where(
+                    or_(
+                        *[
+                            (Scan.user_id == u) & (Scan.performance_id == p)
+                            for u, p in funciones.items()
+                        ]
+                    )
+                )
+                .group_by(Scan.user_id, Scan.performance_id)
+            )
+        ).all():
+            lecturas[(uid, pid)] = (int(pasaron), int(rechazos))
+        for f, e, v in (
+            await db.execute(
+                select(Performance, Event, Venue)
+                .join(Event, Event.id == Performance.event_id)
+                .join(Venue, Venue.id == Event.venue_id)
+                .where(Performance.id.in_(set(funciones.values())))
+            )
+        ).all():
+            datos_funcion[f.id] = (f, e, v)
+    salida = []
+    for uid in ids:
+        pid = funciones.get(uid)
+        ult = None
+        if pid is not None and pid in datos_funcion:
+            f, e, v = datos_funcion[pid]
+            pasaron, rechazos = lecturas.get((uid, pid), (0, 0))
+            ult = {
+                "performance_id": pid,
+                "evento": e.nombre,
+                "inicia_en": _local(f.inicia_en, v.zona_horaria).isoformat(),
+                "escaneos": pasaron,
+                "rechazos": rechazos,
+            }
+        salida.append(
+            {
+                "user_id": uid,
+                "eventos_asignados": int(asignados.get(uid, 0)),
+                "ultima_funcion": ult,
+            }
+        )
+    return salida
