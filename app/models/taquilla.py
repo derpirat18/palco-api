@@ -176,6 +176,10 @@ class VentaDeTaquilla(Base, PKMixin, UUIDPublicoMixin):
         BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
     motivo_anulacion: Mapped[str | None] = mapped_column(String(200))
+    # Al corregirla, el jefe confirma con el cliente enfrente como le devolvio
+    # su dinero (3 nov). En una cortesia no hay dinero: queda nula.
+    devolucion: Mapped[str | None] = mapped_column(String(10))
+    devuelto: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     nota: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
@@ -183,6 +187,13 @@ class VentaDeTaquilla(Base, PKMixin, UUIDPublicoMixin):
             "forma_pago IN ('efectivo','terminal','cortesia')", name="forma_pago_valida"
         ),
         CheckConstraint("total >= 0", name="total_no_negativo"),
+        CheckConstraint(
+            "devolucion IS NULL OR devolucion IN ('efectivo','terminal')",
+            name="devolucion_valida",
+        ),
+        CheckConstraint(
+            "devuelto IS NULL OR devuelto >= 0", name="devuelto_no_negativo"
+        ),
         CheckConstraint(
             "efectivo_lo_tiene IS NULL OR efectivo_lo_tiene IN ('psd','organizador')",
             name="efectivo_lo_tiene_valido",

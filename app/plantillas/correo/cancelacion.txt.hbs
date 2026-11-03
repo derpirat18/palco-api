@@ -1,0 +1,23 @@
+{{titulo}}
+{{subtitulo}}
+
+{{evento.nombre}}
+{{funcion.fecha}} · {{funcion.hora}}
+{{recinto.nombre}}, {{recinto.ciudad}}
+
+La taquilla corrigió {{#if cortesia}}{{#if (eq num_boletos 1)}}tu cortesía{{else}}tus cortesías{{/if}}{{else}}tu compra{{/if}} por un error al venderla. {{#if (eq num_boletos 1)}}Este boleto ya no sirve{{else}}Estos boletos ya no sirven{{/if}} para entrar: su código QR quedó cancelado.
+
+{{#if devolucion}}TU DINERO
+{{devolucion}}
+
+{{/if}}Si en la taquilla te dieron {{#if cortesia}}otras cortesías{{else}}otros boletos{{/if}}, te llegan en un correo aparte.
+
+{{#if (eq num_boletos 1)}}EL LUGAR CANCELADO{{else}}LOS LUGARES CANCELADOS{{/if}}
+{{#each boletos}}- Zona {{zona}} · Fila {{fila}} · Lugar {{lugar}}
+{{/each}}
+{{#if soporte_email}}
+¿Necesitas ayuda? Escríbenos a {{soporte_email}}.
+{{/if}}
+Aviso de privacidad: {{enlaces.aviso_privacidad}}
+
+© {{anio}} {{marca}}.{{#if empresa.razon_social}} {{empresa.razon_social}}{{#if empresa.domicilio}}, {{empresa.domicilio}}{{/if}}.{{/if}}

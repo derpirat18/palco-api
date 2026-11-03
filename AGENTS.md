@@ -358,9 +358,14 @@ Detalle en ADR 0010. Lo que no se rompe:
   siempre salen los boletos con QR. Si entra ya con pulsera o gafete,
   sus boletos quedan `usado` con un escaneo "Entró por taquilla". No hay
   cancelaciones del cliente: solo el jefe corrige un error del cajero,
-  el mismo día y con la caja sin contar, y los lugares regresan a la
-  venta. El corte es a ciegas: el cajero no ve lo esperado hasta que el
-  jefe cierra.
+  el mismo día, con la caja sin contar y con el cliente enfrente, y los
+  lugares regresan a la venta. Si pagó, el jefe confirma que le devolvió
+  su dinero como lo pagó (`devolucion_confirmada`; queda en
+  `box_office_sales.devolucion` / `devuelto` y el corte lo resta de lo
+  esperado), se imprime un comprobante de devolución y la bandeja le
+  manda «Tus boletos se cancelaron» (`taquilla.corregida`,
+  `app/services/correo_cancelacion.py`), también si era cortesía. El corte
+  es a ciegas: el cajero no ve lo esperado hasta que el jefe cierra.
 - Taquilla sin internet (TQ fase 3): la reserva de una caja son butacas
   `apartado` con `hold_id = caja-<uuid>` que vencen al cerrar la venta en
   linea y se sueltan al contar la caja. Solo esa caja las vende. Sin red,

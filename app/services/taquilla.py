@@ -81,6 +81,7 @@ from app.models.users import User
 from app.services import promociones
 from app.services.checkout import CERO, nuevo_codigo_de_boleto, nuevo_folio
 from app.services.consentimientos import ConsentimientoService
+from app.services.correo_cancelacion import VENTA_CORREGIDA
 from app.services.escaner import VALIDO, horario_de_escaneo
 from app.services.tipos import ADULTO, asiento_con_tipo, asiento_de, tarifas_de
 from app.services.venta import iva_de
@@ -196,6 +197,9 @@ class Totales:
     anuladas: int
     efectivo_esperado: Decimal
     folios_esperados: int | None
+    # Lo que se devolvio al corregir ventas (ya no cuenta en lo esperado).
+    devuelto_efectivo: Decimal = Decimal("0.00")
+    devuelto_terminal: Decimal = Decimal("0.00")
 
 
 def _folios_del_rango(caja: CajaDeTaquilla) -> int | None:
@@ -433,12 +437,28 @@ class TaquillaService:
             .join(VentaDeTaquilla, VentaDeTaquilla.order_id == OrderItem.order_id)
             .where(vigentes, OrderItem.anulado.is_(False))
         )
-        anuladas = await self.db.scalar(
-            select(func.count(VentaDeTaquilla.id)).where(
-                VentaDeTaquilla.caja_id == caja.id,
-                VentaDeTaquilla.anulada_en.is_not(None),
+        anuladas, devuelto_efectivo, devuelto_terminal = (
+            await self.db.execute(
+                select(
+                    func.count(VentaDeTaquilla.id),
+                    func.coalesce(
+                        func.sum(VentaDeTaquilla.devuelto).filter(
+                            VentaDeTaquilla.devolucion == EFECTIVO
+                        ),
+                        0,
+                    ),
+                    func.coalesce(
+                        func.sum(VentaDeTaquilla.devuelto).filter(
+                            VentaDeTaquilla.devolucion == TERMINAL
+                        ),
+                        0,
+                    ),
+                ).where(
+                    VentaDeTaquilla.caja_id == caja.id,
+                    VentaDeTaquilla.anulada_en.is_not(None),
+                )
             )
-        )
+        ).one()
         rango = _folios_del_rango(caja)
         return Totales(
             ventas=ventas,
@@ -450,6 +470,8 @@ class TaquillaService:
             anuladas=anuladas or 0,
             efectivo_esperado=_dinero(caja.fondo + _dinero(efectivo)),
             folios_esperados=None if rango is None else rango - int(folios),
+            devuelto_efectivo=_dinero(devuelto_efectivo),
+            devuelto_terminal=_dinero(devuelto_terminal),
         )
 
     async def contar(
@@ -1307,8 +1329,13 @@ class TaquillaService:
         evento: Event,
         usuario: User,
         motivo: str,
+        devolucion_confirmada: bool = False,
     ) -> VentaDeTaquilla:
-        """Correccion por error del cajero: el mismo dia, antes del corte."""
+        """Correccion por error del cajero: el mismo dia, antes del corte, con
+        el cliente enfrente. Si pago, el jefe confirma que le devolvio su
+        dinero como lo pago (efectivo o cancelando en la terminal): el corte
+        ya no cuenta esa venta. Al cliente le llega un correo de que sus
+        boletos se cancelaron (tambien si era cortesia)."""
         motivo = (motivo or "").strip()
         if len(motivo) < 5:
             raise TaquillaInvalida(
@@ -1316,6 +1343,12 @@ class TaquillaService:
             )
         if venta.anulada_en is not None:
             raise TaquillaInvalida("Esta venta ya se corrigió.")
+        if venta.forma_pago != CORTESIA and not devolucion_confirmada:
+            raise TaquillaInvalida(
+                "Confirma que le devolviste su dinero al cliente: la venta deja "
+                "de contar en el corte.",
+                {"campo": "devolucion"},
+            )
         if caja.estado != ABIERTA:
             raise TaquillaInvalida(
                 "Esta caja ya se contó: las correcciones son antes del corte."
@@ -1383,6 +1416,23 @@ class TaquillaService:
         venta.anulada_en = func.now()
         venta.anulada_por = usuario.id
         venta.motivo_anulacion = motivo[:200]
+        if venta.forma_pago != CORTESIA:
+            venta.devolucion = venta.forma_pago
+            venta.devuelto = venta.total
+        # El correo al cliente lo manda la bandeja, nunca desde la peticion.
+        self.db.add(
+            OutboxEvent(
+                tipo=VENTA_CORREGIDA,
+                agregado_uuid=orden.uuid,
+                payload={
+                    "orden_uuid": str(orden.uuid),
+                    "venta_uuid": str(venta.uuid),
+                    "folio": orden.folio,
+                    "devolucion": venta.devolucion,
+                    "devuelto": str(venta.devuelto) if venta.devuelto else None,
+                },
+            )
+        )
         await self.db.flush()
         await self.db.refresh(venta)
         return venta
@@ -1467,6 +1517,10 @@ class TaquillaService:
             "cajero": cajero.nombre if cajero else None,
             "vendida_en": venta.vendida_en,
             "anulada": venta.anulada_en is not None,
+            "anulada_en": venta.anulada_en,
+            "motivo_anulacion": venta.motivo_anulacion,
+            "devolucion": venta.devolucion,
+            "devuelto": venta.devuelto,
             "texto_legal": evento.texto_legal_medio,
             "pie": pie_del_recibo(evento, cliente),
         }
@@ -1497,6 +1551,8 @@ class TaquillaService:
             ("Boletos", t.boletos),
             ("Cortesías", t.cortesias),
             ("Ventas corregidas por error", t.anuladas),
+            ("Devuelto en efectivo al corregir", t.devuelto_efectivo),
+            ("Cancelado en la terminal al corregir", t.devuelto_terminal),
             ("Efectivo vendido", t.efectivo),
             ("Efectivo esperado (fondo + ventas)", t.efectivo_esperado),
             ("Efectivo contado", caja.efectivo_contado),

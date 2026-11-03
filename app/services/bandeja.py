@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.outbox import OutboxEvent
 from app.services.confirmacion import armar_confirmacion
 from app.services.correo import Cartero
+from app.services.correo_cancelacion import VENTA_CORREGIDA, armar_correo_de_cancelacion
 from app.services.correo_pases import armar_correo_de_pase
 from app.services.recordatorios import (
     DEL_ACOMPANANTE,
@@ -83,6 +84,8 @@ class BandejaService:
             # BOL10: 24 h antes de la funcion.
             DEL_COMPRADOR: self._recordatorio_del_comprador,
             DEL_ACOMPANANTE: self._recordatorio_del_acompanante,
+            # Taquilla: el jefe corrigio la venta (error del cajero).
+            VENTA_CORREGIDA: self._correo_de_cancelacion,
         }
         # Los recordatorios se programan una vez por minuto, no en cada vuelta.
         self.recordatorios = recordatorios
@@ -108,6 +111,15 @@ class BandejaService:
             # Se revoco antes de que saliera: nada que mandar.
             return
         await self.cartero.enviar(mensaje)
+
+    async def _correo_de_cancelacion(
+        self, db: AsyncSession, evento: OutboxEvent
+    ) -> None:
+        mensaje = await armar_correo_de_cancelacion(
+            db, UUID(evento.payload["orden_uuid"])
+        )
+        if mensaje is not None:
+            await self.cartero.enviar(mensaje)
 
     async def _correo_reenviado(self, db: AsyncSession, evento: OutboxEvent) -> None:
         # Compra o cortesia: se deduce del canal de la orden.

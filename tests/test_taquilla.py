@@ -361,9 +361,17 @@ async def test_correccion_por_error_del_cajero(cliente_http, db, usuarios, esc, 
         headers=de(usuarios, "acceso"),
     )
     assert r.status_code == 403
+    # Sin confirmar que se le devolvio su dinero, no se corrige.
     r = await cliente_http.post(
         f"{TQ}/ventas/{v}/anular",
         json={"motivo": "Error de cajero: era Balcón"},
+        headers=de(usuarios, "org_a"),
+    )
+    assert r.status_code == 409
+    assert r.json()["error"]["detalle"]["campo"] == "devolucion"
+    r = await cliente_http.post(
+        f"{TQ}/ventas/{v}/anular",
+        json={"motivo": "Error de cajero: era Balcón", "devolucion_confirmada": True},
         headers=de(usuarios, "org_a"),
     )
     assert r.status_code == 200, r.text
@@ -394,6 +402,57 @@ async def test_correccion_por_error_del_cajero(cliente_http, db, usuarios, esc, 
     # El lugar se vuelve a vender.
     r = await vender(cliente_http, usuarios, caja, venta(esc, [a]))
     assert r.status_code == 201
+
+
+async def test_correccion_devuelve_y_avisa_al_cliente(
+    cliente_http, db, usuarios, esc, caja
+):
+    """Con el cliente enfrente: se le devuelve su dinero (queda en el corte)
+    y le llega el correo de que sus boletos se cancelaron. En una cortesia,
+    el correo sin dinero."""
+    a, b = esc["seat_ids"][:2]
+    r = await vender(cliente_http, usuarios, caja, venta(esc, [a]))
+    v, total = r.json()["uuid"], Decimal(r.json()["total"])
+    r = await cliente_http.post(
+        f"{TQ}/ventas/{v}/anular",
+        json={"motivo": "Cobró la zona equivocada", "devolucion_confirmada": True},
+        headers=de(usuarios, "org_a"),
+    )
+    assert r.status_code == 200, r.text
+    rec = r.json()
+    assert (rec["devolucion"], Decimal(rec["devuelto"])) == ("efectivo", total)
+    assert rec["anulada_en"] and rec["motivo_anulacion"]
+    r = await cliente_http.get(f"{TQ}/cajas/{caja}", headers=de(usuarios, "org_a"))
+    t = r.json()["caja"]["totales"]
+    assert Decimal(t["devuelto_efectivo"]) == total and t["anuladas"] == 1
+    assert Decimal(t["efectivo"]) == 0
+
+    # Cortesia: sin dinero, no pide confirmar la devolucion.
+    r = await vender(
+        cliente_http,
+        usuarios,
+        caja,
+        venta(esc, [b], forma="cortesia", motivo_cortesia="Prensa"),
+    )
+    c = r.json()["uuid"]
+    r = await cliente_http.post(
+        f"{TQ}/ventas/{c}/anular",
+        json={"motivo": "No era para prensa"},
+        headers=de(usuarios, "org_a"),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["devolucion"] is None
+
+    cartero = CarteroFalso()
+    await bandeja(db, cartero).una_vuelta()
+    canceladas = [m for m in cartero.enviados if "cancel" in m.asunto]
+    assert len(canceladas) == 2
+    compra = next(m for m in canceladas if "boleto" in m.asunto)
+    assert compra.para == "cliente@correo.mx"
+    assert f"Te devolvimos ${total:,.2f} en efectivo" in compra.html
+    assert "ya no sirve" in compra.texto and "Ver mis boletos" not in compra.html
+    cortesia = next(m for m in canceladas if "cortes" in m.asunto)
+    assert "Tu dinero" not in cortesia.html and "Te devolvimos" not in cortesia.texto
 
 
 async def test_corregir_el_correo(cliente_http, db, usuarios, esc, caja):

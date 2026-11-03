@@ -79,6 +79,8 @@ class TotalesResponse(BaseModel):
     anuladas: int
     efectivo_esperado: Decimal
     folios_esperados: int | None
+    devuelto_efectivo: Decimal = Decimal("0")
+    devuelto_terminal: Decimal = Decimal("0")
 
 
 class CajaResponse(BaseModel):
@@ -274,12 +276,19 @@ class ReciboResponse(BaseModel):
     cajero: str | None
     vendida_en: datetime
     anulada: bool
+    # Para el comprobante de devolucion (3 nov).
+    anulada_en: datetime | None = None
+    motivo_anulacion: str | None = None
+    devolucion: str | None = None
+    devuelto: Decimal | None = None
     texto_legal: str | None
     pie: str
 
 
 class MotivoRequest(BaseModel):
     motivo: LineaSegura = Field(min_length=5, max_length=200)
+    # Con el cliente enfrente: "le devolvi su dinero" (no aplica a cortesias).
+    devolucion_confirmada: bool = False
 
 
 class CorreoRequest(BaseModel):
@@ -833,7 +842,9 @@ async def anular(
     venta, caja, ev, puesto = await svc.venta(venta_uuid, usuario)
     if puesto != JEFE:
         raise SinPermisoDeTaquilla("Las correcciones las autoriza el jefe de taquilla.")
-    await svc.anular(venta, caja, ev, usuario, datos.motivo)
+    await svc.anular(
+        venta, caja, ev, usuario, datos.motivo, datos.devolucion_confirmada
+    )
     await db.commit()
     return await _recibo(svc, venta, caja, ev)
 
