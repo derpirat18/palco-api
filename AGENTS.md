@@ -118,6 +118,21 @@ ningún QR, ni siquiera el de la liga: la liga es la llave de los boletos.
 - Cambiar de correo se confirma con código al nuevo; si el nuevo ya existe,
   se juntan (`cambiar_correo` mueve toda columna que apunta a customers.id).
 
+## Reportes, Inicio y buscador (RP3)
+
+- `app/services/reportes.py`: Ventas, Taquilla y cortes, Asistencia, Cortesías,
+  Compradores y Ocupación, con filtros y periodo por fecha de compra o de la
+  función (días en hora del centro). `acotar` decide qué ve cada quien: PSD
+  todo, el organizador lo suyo, el jefe de taquilla solo Taquilla y cortes de
+  sus eventos. Se suma lo congelado en cada compra; nunca se recalcula.
+- `app/services/reportes_archivos.py`: Excel (openpyxl), CSV (UTF-8 con BOM,
+  sin fórmulas) y PDF (reportlab).
+- Compradores solo trae correo y teléfono de quien aceptó promociones en una
+  compra de ese organizador, y siempre los `*_snap`. Verlo, descargar
+  cualquier reporte y buscar un correo quedan en `data_access_log.filtros`.
+- `app/services/inicio.py`: la pantalla de Inicio y el buscador del panel
+  (`/panel/inicio`, `/panel/buscar`), solo PSD y organizador.
+
 ## Stack
 
 - Python 3.12+, FastAPI, SQLAlchemy 2.0 async, Alembic, Pydantic v2

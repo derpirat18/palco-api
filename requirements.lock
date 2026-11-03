@@ -45,6 +45,7 @@ python-dotenv==1.2.4
 python-jose==3.5.0
 PyYAML==6.0.3
 redis==8.1.0
+reportlab==5.1.0
 requests==2.34.2
 rsa==4.9.1
 s3transfer==0.19.3

@@ -21,6 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, PKMixin
@@ -71,6 +72,8 @@ class ConsultaDeDatos(Base, PKMixin):
     )
     # ver: en pantalla. descargar: a Excel (sale del sistema).
     accion: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Reportes (RP3) y busqueda: con que filtros y en que formato.
+    filtros: Mapped[dict | None] = mapped_column(JSONB)
     consultado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

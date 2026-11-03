@@ -31,6 +31,8 @@ dependencies = [
     # reducir lo que se sube (Pillow), y guardarlo en S3 (boto3).
     "Pillow>=11.0",
     "boto3>=1.35",
+    # Reportes en PDF (app/services/reportes_archivos.py). BSD, Python puro.
+    "reportlab>=4.2",
 ]
 
 [project.optional-dependencies]
