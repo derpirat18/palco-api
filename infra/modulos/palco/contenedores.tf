@@ -113,6 +113,10 @@ locals {
       CORREO_SMTP_STARTTLS      = "true"
       CORREO_REMITENTE          = var.correo_remitente
       TURNSTILE_SITE_KEY        = var.turnstile_site_key
+      WHATSAPP_NUMERO_PUBLICO   = var.asistente.numero_publico
+      IA_PROVEEDOR              = var.asistente.ia_proveedor
+      IA_MODELO                 = var.asistente.ia_modelo
+      ASISTENTE_NOMBRE          = var.asistente.nombre
       # Imagenes de los eventos (medios.tf). Sin CloudFront no hay donde
       # servirlas: la API avisa que no esta configurado.
       MEDIOS_BUCKET = var.con_cloudfront ? aws_s3_bucket.medios[0].bucket : ""

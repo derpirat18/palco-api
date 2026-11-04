@@ -68,7 +68,9 @@ async def configuracion_publica() -> dict:
     """
     site_key = settings.TURNSTILE_SITE_KEY or None
     return {
-        "verificacion_humana": {"activa": site_key is not None, "site_key": site_key}
+        "verificacion_humana": {"activa": site_key is not None, "site_key": site_key},
+        # El numero del asistente (bot): el sitio pone su boton si lo hay.
+        "whatsapp": {"numero": settings.WHATSAPP_NUMERO_PUBLICO or None},
     }
 
 

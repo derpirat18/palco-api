@@ -283,7 +283,10 @@ async def test_el_front_lee_la_sitekey(api):
     r = await api.get(f"{API}/publico/configuracion")
 
     assert r.status_code == 200
-    assert r.json() == {"verificacion_humana": {"activa": True, "site_key": SITE_KEY}}
+    assert r.json() == {
+        "verificacion_humana": {"activa": True, "site_key": SITE_KEY},
+        "whatsapp": {"numero": None},
+    }
 
 
 async def test_apagada_el_front_no_muestra_el_widget(api, monkeypatch):
@@ -291,7 +294,10 @@ async def test_apagada_el_front_no_muestra_el_widget(api, monkeypatch):
 
     r = await api.get(f"{API}/publico/configuracion")
 
-    assert r.json() == {"verificacion_humana": {"activa": False, "site_key": None}}
+    assert r.json() == {
+        "verificacion_humana": {"activa": False, "site_key": None},
+        "whatsapp": {"numero": None},
+    }
 
 
 async def test_la_configuracion_no_lleva_la_secreta(api):

@@ -115,6 +115,23 @@ variable "turnstile_site_key" {
   type        = string
 }
 
+variable "asistente" {
+  description = <<-EOT
+    Asistente por WhatsApp (bot). Lo que no es secreto: el numero que ve la
+    gente (solo digitos con lada; vacio = sin boton en el sitio), la empresa de
+    IA (anthropic, openai, gemini, deepseek, mistral, groq, xai u otro), el
+    modelo (vacio con anthropic = el de omision) y el nombre con que se
+    presenta. Las llaves van en SSM (secretos.tf).
+  EOT
+  type = object({
+    numero_publico = optional(string, "")
+    ia_proveedor   = optional(string, "anthropic")
+    ia_modelo      = optional(string, "")
+    nombre         = optional(string, "")
+  })
+  default = {}
+}
+
 variable "con_cloudfront" {
   description = "CloudFront delante del balanceador: HTTPS sin dominio propio y el balanceador cerrado al publico."
   type        = bool

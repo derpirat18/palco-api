@@ -594,3 +594,23 @@ Reglas para escribir un `mensaje`:
 - `cuentas`: eventos asignados y la última función que escaneó cada quien (lecturas con su
   `user_id`: cuántas dejó pasar y cuántas rechazó). PSD ve todas; el organizador, su personal
   de acceso. El personal de acceso no tiene estas pantallas (403).
+
+## Asistente por WhatsApp (bot, 3 nov; fase de demo)
+
+- Webhook `app/api/v1/whatsapp.py` (`/whatsapp/webhook`): GET conecta (token de verificación),
+  POST recibe. Sin firma válida de Meta (`X-Hub-Signature-256` con `WHATSAPP_APP_SECRET`) responde
+  401 y no guarda nada. Apagado (falta cualquier variable de `faltantes_del_asistente`) responde
+  404; a medias NO tumba la API, solo anota qué falta. Es una ruta aparte del webhook de Stripe.
+- `app/services/asistente.py`: guarda lo que llega (`registrar_entrantes`, el `wamid` es único:
+  un reintento de Meta no se contesta dos veces), contesta en segundo plano (`programar` →
+  `atender`) con candado por conversación en Redis y topes diarios por número y en total.
+- Herramientas del bot: solo LEEN lo público (cartelera, evento, zonas, cómo llegar) y arman la
+  liga a `/<slug>/funcion/<id>`. No apartan, no cobran, no ven compras ni datos de nadie. Que el
+  bot aparte lugares o vea compras es zona crítica: requiere autorización explícita.
+- IA intercambiable (`app/services/ia.py`): `Anthropic` y `CompatibleConOpenAI` (OpenAI, Gemini,
+  DeepSeek, Mistral, Groq, xAI u `otro` con `IA_URL`). Se cambia con `IA_PROVEEDOR`, `IA_MODELO` e
+  `IA_LLAVE`. Otra empresa = otro conector que cumpla `ProveedorIA`.
+- Tablas `asistente_conversaciones` y `asistente_mensajes`: guardan número y texto (datos
+  personales). Cualquier pantalla que los muestre debe dejar rastro en la bitácora.
+- En SSM con "pendiente" cuenta como vacío (si contara, el webhook aceptaría firmas con esa clave).
+- Pruebas en `tests/test_asistente.py`, con IA y WhatsApp falsos: nunca gastan ni mandan mensajes.

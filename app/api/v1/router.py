@@ -19,6 +19,7 @@ from app.api.v1 import (
     reportes,
     taquilla,
     usuarios,
+    whatsapp,
 )
 
 api_router = APIRouter()
@@ -40,3 +41,4 @@ api_router.include_router(taquilla.router)
 api_router.include_router(reportes.router)
 api_router.include_router(promociones.router)
 api_router.include_router(metricas.router)
+api_router.include_router(whatsapp.router)

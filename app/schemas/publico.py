@@ -180,10 +180,18 @@ class VerificacionHumanaResponse(BaseModel):
     site_key: str | None
 
 
+class WhatsAppPublicoResponse(BaseModel):
+    """El boton del asistente (bot, 3 nov): abre wa.me/<numero>."""
+
+    # Solo digitos con lada. None: no hay boton.
+    numero: str | None
+
+
 class ConfiguracionPublicaResponse(BaseModel):
     """Lo que el front necesita saber del servidor antes de vender."""
 
     verificacion_humana: VerificacionHumanaResponse
+    whatsapp: WhatsAppPublicoResponse
 
 
 class CorreoEnElNavegadorResponse(BaseModel):

@@ -117,6 +117,13 @@ module "palco" {
   correo_remitente   = "PSD Pruebas <pruebas@psdevents.com>"
   turnstile_site_key = "1x00000000000000000000AA" # prueba de Cloudflare: aprueba siempre
 
+  # Asistente por WhatsApp (bot): el numero de prueba que da Meta. Las llaves
+  # van en SSM (/palco/sandbox/WHATSAPP_* e IA_LLAVE).
+  asistente = {
+    numero_publico = "15556016883"
+    ia_proveedor   = "anthropic"
+  }
+
   dias_de_registros        = 7
   permitir_borrar_imagenes = true
 }

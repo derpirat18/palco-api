@@ -145,6 +145,96 @@ class Settings(BaseSettings):
         {"nombre": "YouTube", "icono": "youtube", "url": "https://www.youtube.com/"},
     ]  # fmt: skip
 
+    # --- Asistente por WhatsApp (bot, 3 nov) ---
+    # Meta (WhatsApp Cloud API). Las cuatro van juntas: sin ellas el
+    # asistente esta apagado y su webhook responde 404. El token y la clave
+    # secreta de la app viven en SSM; nunca en el repositorio.
+    WHATSAPP_TOKEN: str = ""
+    WHATSAPP_APP_SECRET: str = ""
+    # Lo inventamos nosotros: Meta lo repite al conectar el webhook.
+    WHATSAPP_VERIFY_TOKEN: str = ""
+    # "Identificador del numero de telefono" en el panel de Meta.
+    WHATSAPP_NUMERO_ID: str = ""
+    # El numero que ve la gente, solo digitos con lada ("15556016883"): el
+    # boton del sitio abre wa.me/<numero>. Vacio: el sitio no muestra boton.
+    WHATSAPP_NUMERO_PUBLICO: str = ""
+    WHATSAPP_API_VERSION: str = "v23.0"
+
+    # La IA que contesta. Cambiar de empresa es cambiar estas variables:
+    # anthropic, o cualquiera que hable como OpenAI (openai, gemini,
+    # deepseek, mistral, groq, xai, u "otro" con IA_URL).
+    IA_PROVEEDOR: Literal[
+        "anthropic", "openai", "gemini", "deepseek", "mistral", "groq", "xai", "otro"
+    ] = "anthropic"
+    # Vacio con anthropic: el de omision (app/services/ia.py).
+    IA_MODELO: str = ""
+    IA_LLAVE: str = ""
+    # Solo con IA_PROVEEDOR=otro (o para cambiar la direccion de uno conocido).
+    IA_URL: str = ""
+
+    # Nombre con el que se presenta (lo define Nadia). Vacio: "el asistente
+    # de <MARCA>".
+    ASISTENTE_NOMBRE: str = ""
+    # Topes para que el gasto en IA no se dispare (un numero insistente o
+    # un ataque). Al llegar, contesta una vez que siga mas tarde.
+    ASISTENTE_MENSAJES_POR_NUMERO_AL_DIA: int = Field(default=80, ge=1)
+    ASISTENTE_MENSAJES_AL_DIA: int = Field(default=3000, ge=1)
+
+    @field_validator(
+        "WHATSAPP_TOKEN",
+        "WHATSAPP_APP_SECRET",
+        "WHATSAPP_VERIFY_TOKEN",
+        "WHATSAPP_NUMERO_ID",
+        "WHATSAPP_NUMERO_PUBLICO",
+        "IA_MODELO",
+        "IA_LLAVE",
+        "IA_URL",
+        "ASISTENTE_NOMBRE",
+    )
+    @classmethod
+    def _sin_espacios_del_asistente(cls, valor: str) -> str:
+        # Una llave pegada desde el portapapeles suele traer un salto de
+        # linea. "pendiente" es lo que deja Terraform en SSM antes de que una
+        # persona ponga el valor: cuenta como vacio. Si contara, el webhook
+        # aceptaria avisos firmados con la clave "pendiente".
+        valor = valor.strip()
+        return "" if valor.lower() == "pendiente" else valor
+
+    def faltantes_del_asistente(self) -> list[str]:
+        """Lo que falta para encenderlo. Vacio: encendido."""
+        necesarias = {
+            "WHATSAPP_TOKEN": self.WHATSAPP_TOKEN,
+            "WHATSAPP_APP_SECRET": self.WHATSAPP_APP_SECRET,
+            "WHATSAPP_VERIFY_TOKEN": self.WHATSAPP_VERIFY_TOKEN,
+            "WHATSAPP_NUMERO_ID": self.WHATSAPP_NUMERO_ID,
+            "IA_LLAVE": self.IA_LLAVE,
+        }
+        faltan = [k for k, v in necesarias.items() if not v]
+        if self.IA_PROVEEDOR != "anthropic" and not self.IA_MODELO:
+            faltan.append("IA_MODELO")
+        if self.IA_PROVEEDOR == "otro" and not self.IA_URL:
+            faltan.append("IA_URL")
+        return faltan
+
+    @property
+    def whatsapp_activo(self) -> bool:
+        """Solo con todo puesto. A medias se queda apagado (el webhook da 404)
+        en lugar de tumbar la API: la boletera sigue vendiendo aunque falte
+        una llave del asistente. El webhook anota que falta."""
+        return not self.faltantes_del_asistente()
+
+    @model_validator(mode="after")
+    def _asistente_bien_escrito(self) -> "Settings":
+        """Lo que esta mal escrito si se rechaza al arrancar."""
+        if self.WHATSAPP_NUMERO_PUBLICO and not self.WHATSAPP_NUMERO_PUBLICO.isdigit():
+            raise ValueError(
+                "WHATSAPP_NUMERO_PUBLICO lleva solo digitos con lada, "
+                'sin "+" ni espacios: 15556016883.'
+            )
+        if self.IA_URL and not self.IA_URL.startswith("https://"):
+            raise ValueError("IA_URL debe empezar con https://.")
+        return self
+
     @field_validator("SECRET_KEY", "TICKET_SIGNING_KEY")
     @classmethod
     def _rechazar_relleno(cls, valor: str, info) -> str:

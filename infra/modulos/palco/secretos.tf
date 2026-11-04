@@ -6,7 +6,7 @@
 #
 # - Los que genera Terraform (llaves de firma, URLs con contrasena, el
 #   usuario y la contrasena SMTP de SES, ver correo.tf).
-# - Los que pone una persona (Stripe, Turnstile): Terraform los
+# - Los que pone una persona (Stripe, Turnstile, Meta y la IA del asistente): Terraform los
 #   crea con "pendiente" y NO vuelve a tocarlos (ignore_changes). Se cambian
 #   con `aws ssm put-parameter --overwrite` desde la terminal de quien los
 #   tiene, nunca pegandolos en un chat ni en un archivo del repositorio.
@@ -31,6 +31,13 @@ locals {
     "STRIPE_PUBLISHABLE_KEY",
     "STRIPE_WEBHOOK_SECRET",
     "TURNSTILE_SECRET_KEY",
+    # Asistente por WhatsApp (bot). Con "pendiente" la app lo trata como
+    # vacio y el asistente queda apagado.
+    "WHATSAPP_TOKEN",
+    "WHATSAPP_APP_SECRET",
+    "WHATSAPP_VERIFY_TOKEN",
+    "WHATSAPP_NUMERO_ID",
+    "IA_LLAVE",
   ])
 }
 
