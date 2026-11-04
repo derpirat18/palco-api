@@ -96,6 +96,19 @@ def leer_mensajes(aviso: dict) -> list[MensajeEntrante]:
     return salida
 
 
+def destinatario(telefono: str) -> str:
+    """A que numero se contesta.
+
+    WhatsApp manda los celulares de Mexico como 521 + 10 digitos (el "1"
+    viejo de los celulares), pero para mandarles hay que usar 52 + 10
+    digitos: con el "1" Meta responde 131030 (no esta en la lista de numeros
+    de prueba) y en produccion puede no entregarse.
+    """
+    if len(telefono) == 13 and telefono.startswith("521"):
+        return "52" + telefono[3:]
+    return telefono
+
+
 def partir(texto: str, tope: int = MAX_TEXTO) -> list[str]:
     """Parte un texto largo por parrafos (o a la fuerza) en piezas <= tope."""
     texto = texto.strip()
@@ -187,7 +200,7 @@ class ClienteWhatsApp:
                 await self._post(
                     {
                         "messaging_product": "whatsapp",
-                        "to": telefono,
+                        "to": destinatario(telefono),
                         "type": "text",
                         "text": {"body": pieza, "preview_url": True},
                     }
@@ -202,7 +215,7 @@ class ClienteWhatsApp:
             await self._post(
                 {
                     "messaging_product": "whatsapp",
-                    "to": telefono,
+                    "to": destinatario(telefono),
                     "type": "location",
                     "location": {
                         "latitude": lat,

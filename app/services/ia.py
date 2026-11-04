@@ -71,6 +71,10 @@ class Llamada:
     id: str
     nombre: str
     argumentos: dict
+    # Lo que la empresa pide que se le regrese tal cual junto con la llamada.
+    # Gemini 3 manda aqui su "firma de pensamiento" (thought_signature) y
+    # rechaza la siguiente consulta si no se la devolvemos.
+    extra: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -267,6 +271,7 @@ class CompatibleConOpenAI:
                                     c.argumentos, ensure_ascii=False
                                 ),
                             },
+                            **({"extra_content": c.extra} if c.extra else {}),
                         }
                         for c in t.llamadas
                     ]
@@ -321,7 +326,15 @@ class CompatibleConOpenAI:
                 argumentos = json.loads(fn.get("arguments") or "{}")
             except json.JSONDecodeError:
                 argumentos = {}
-            llamadas.append(Llamada(c.get("id", ""), fn.get("name", ""), argumentos))
+            extra = c.get("extra_content")
+            llamadas.append(
+                Llamada(
+                    c.get("id", ""),
+                    fn.get("name", ""),
+                    argumentos,
+                    extra if isinstance(extra, dict) and extra else None,
+                )
+            )
         return Respuesta((mensaje.get("content") or "").strip(), llamadas)
 
 

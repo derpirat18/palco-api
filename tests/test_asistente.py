@@ -37,6 +37,7 @@ from app.services.ia import (
 from app.services.whatsapp import (
     ClienteWhatsApp,
     MensajeEntrante,
+    destinatario,
     firma_valida,
     leer_mensajes,
     partir,
@@ -660,6 +661,53 @@ async def test_con_openai_el_tope_va_en_max_completion_tokens(monkeypatch):
     g = modulo.proveedor_por_configuracion()
     assert (g.campo_tokens, g.tokens) == ("max_tokens", 2500)
     assert g.url == "https://generativelanguage.googleapis.com/v1beta/openai"
+
+
+async def test_gemini_recibe_de_vuelta_su_firma_de_pensamiento():
+    firma = {"google": {"thought_signature": "firma-A"}}
+    cliente, pedidas = http_falso(
+        (200, {"choices": [{"message": {"content": None, "tool_calls": [
+            {"id": "t9", "type": "function", "extra_content": firma,
+             "function": {"name": "buscar_eventos", "arguments": "{}"}}
+        ]}}]}),
+        (200, {"choices": [{"message": {"content": "Listo"}}]}),
+    )  # fmt: skip
+    ia = CompatibleConOpenAI("k", "gemini-x", "https://g.example/openai", cliente)
+
+    r = await ia.responder("s", [Turno("usuario", "Hola")], [HERRAMIENTA])
+    assert r.llamadas[0].extra == firma
+    turnos = [
+        Turno("usuario", "Hola"),
+        Turno("asistente", "", list(r.llamadas)),
+        Turno("herramientas", resultados=[Resultado("t9", "buscar_eventos", "{}")]),
+    ]
+    await ia.responder("s", turnos, [HERRAMIENTA])
+
+    enviada = json.loads(pedidas[1].content)["messages"][2]["tool_calls"][0]
+    assert enviada["extra_content"] == firma
+    # Sin firma (OpenAI, DeepSeek) no se manda el campo.
+    assert (
+        "extra_content"
+        not in CompatibleConOpenAI.mensajes(
+            "s", [Turno("asistente", "", [Llamada("x", "y", {})])]
+        )[1]["tool_calls"][0]
+    )
+
+
+async def test_a_mexico_se_contesta_sin_el_1_del_celular():
+    assert destinatario("5213312345678") == "523312345678"
+    assert destinatario("523312345678") == "523312345678"
+    assert destinatario("15556016883") == "15556016883"
+    assert destinatario("5491112345678") == "5491112345678"
+
+    cliente, pedidas = http_falso(
+        (200, {"messages": [{"id": "wamid.1"}]}),
+        (200, {"messages": [{"id": "wamid.2"}]}),
+    )
+    wa = ClienteWhatsApp("tok", "123", "v23.0", cliente)
+    await wa.enviar_texto("5213312345678", "Hola")
+    await wa.enviar_ubicacion("5213312345678", 19.4, -99.1, "Recinto", "Calle 1")
+    assert [json.loads(p.content)["to"] for p in pedidas] == ["523312345678"] * 2
 
 
 async def test_llave_mala_es_falla_clara():
