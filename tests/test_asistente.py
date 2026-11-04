@@ -656,8 +656,10 @@ async def test_con_openai_el_tope_va_en_max_completion_tokens(monkeypatch):
     cuerpo = json.loads(pedidas[0].content)
     assert cuerpo["max_completion_tokens"] == 2500 and "max_tokens" not in cuerpo
 
-    monkeypatch.setattr(settings, "IA_PROVEEDOR", "deepseek")
-    assert modulo.proveedor_por_configuracion().campo_tokens == "max_tokens"
+    monkeypatch.setattr(settings, "IA_PROVEEDOR", "gemini")
+    g = modulo.proveedor_por_configuracion()
+    assert (g.campo_tokens, g.tokens) == ("max_tokens", 2500)
+    assert g.url == "https://generativelanguage.googleapis.com/v1beta/openai"
 
 
 async def test_llave_mala_es_falla_clara():

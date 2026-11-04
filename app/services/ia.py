@@ -43,8 +43,10 @@ DIRECCIONES = {
 
 # Respuestas cortas: es WhatsApp. Tambien acota el gasto por mensaje.
 MAX_TOKENS = 700
-# Con OpenAI el tope incluye lo que el modelo "piensa" (GPT-5 y similares).
-MAX_TOKENS_OPENAI = 2500
+# En los modelos que "piensan" antes de contestar (GPT-5, Gemini Flash,
+# DeepSeek R1...) el tope incluye lo que piensan: con uno chico la respuesta
+# llega vacia. Solo se paga lo que se usa.
+MAX_TOKENS_COMPATIBLES = 2500
 ESPERA_SEGUNDOS = 45.0
 # Saturada, limitada o caida un momento: se reintenta una vez.
 _REINTENTABLES = {408, 409, 429, 500, 502, 503, 504, 529}
@@ -232,7 +234,7 @@ class CompatibleConOpenAI:
     """`campo_tokens`: OpenAI ya no acepta `max_tokens` en sus modelos nuevos
     (GPT-5, o3...) y pide `max_completion_tokens`; las demas empresas siguen
     con `max_tokens`. En los modelos que "razonan", ese tope incluye lo que
-    piensan antes de contestar: por eso con OpenAI es mas holgado."""
+    piensan antes de contestar: por eso es mas holgado que con Anthropic."""
 
     def __init__(
         self,
@@ -241,7 +243,7 @@ class CompatibleConOpenAI:
         url: str,
         cliente: httpx.AsyncClient | None = None,
         campo_tokens: str = "max_tokens",
-        tokens: int = MAX_TOKENS,
+        tokens: int = 2500,
     ) -> None:
         self.llave, self.modelo, self.url, self.cliente = llave, modelo, url, cliente
         self.campo_tokens, self.tokens = campo_tokens, tokens
@@ -339,6 +341,8 @@ def proveedor_por_configuracion() -> ProveedorIA:
             settings.IA_MODELO,
             url,
             campo_tokens="max_completion_tokens",
-            tokens=MAX_TOKENS_OPENAI,
+            tokens=MAX_TOKENS_COMPATIBLES,
         )
-    return CompatibleConOpenAI(settings.IA_LLAVE, settings.IA_MODELO, url)
+    return CompatibleConOpenAI(
+        settings.IA_LLAVE, settings.IA_MODELO, url, tokens=MAX_TOKENS_COMPATIBLES
+    )
