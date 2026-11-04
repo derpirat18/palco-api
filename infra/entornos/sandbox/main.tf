@@ -121,8 +121,8 @@ module "palco" {
   # van en SSM (/palco/sandbox/WHATSAPP_* e IA_LLAVE).
   asistente = {
     numero_publico = "15556016883"
-    ia_proveedor   = "openai"
-    ia_modelo      = "gpt-5.4-mini"
+    ia_proveedor   = "gemini"
+    ia_modelo      = "gemini-3.5-flash-lite"
   }
 
   dias_de_registros        = 7
