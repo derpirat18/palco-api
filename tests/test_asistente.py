@@ -638,6 +638,28 @@ async def test_compatible_con_openai(monkeypatch):
     assert cuerpo["tools"][0]["function"]["name"] == "buscar_eventos"
 
 
+async def test_con_openai_el_tope_va_en_max_completion_tokens(monkeypatch):
+    from app.services import ia as modulo
+
+    monkeypatch.setattr(settings, "IA_PROVEEDOR", "openai")
+    monkeypatch.setattr(settings, "IA_MODELO", "gpt-x")
+    monkeypatch.setattr(settings, "IA_URL", "")
+    p = modulo.proveedor_por_configuracion()
+    assert p.url == "https://api.openai.com/v1"
+    assert (p.campo_tokens, p.tokens) == ("max_completion_tokens", 2500)
+
+    cliente, pedidas = http_falso(
+        (200, {"choices": [{"message": {"content": "Hola"}}]})
+    )
+    p.cliente = cliente
+    assert (await p.responder("s", [Turno("usuario", "x")], [])).texto == "Hola"
+    cuerpo = json.loads(pedidas[0].content)
+    assert cuerpo["max_completion_tokens"] == 2500 and "max_tokens" not in cuerpo
+
+    monkeypatch.setattr(settings, "IA_PROVEEDOR", "deepseek")
+    assert modulo.proveedor_por_configuracion().campo_tokens == "max_tokens"
+
+
 async def test_llave_mala_es_falla_clara():
     cliente, _ = http_falso((401, {"error": "invalid x-api-key"}))
     with pytest.raises(FallaDeIA, match="401"):

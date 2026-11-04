@@ -43,6 +43,8 @@ DIRECCIONES = {
 
 # Respuestas cortas: es WhatsApp. Tambien acota el gasto por mensaje.
 MAX_TOKENS = 700
+# Con OpenAI el tope incluye lo que el modelo "piensa" (GPT-5 y similares).
+MAX_TOKENS_OPENAI = 2500
 ESPERA_SEGUNDOS = 45.0
 # Saturada, limitada o caida un momento: se reintenta una vez.
 _REINTENTABLES = {408, 409, 429, 500, 502, 503, 504, 529}
@@ -227,14 +229,22 @@ class Anthropic:
 
 
 class CompatibleConOpenAI:
+    """`campo_tokens`: OpenAI ya no acepta `max_tokens` en sus modelos nuevos
+    (GPT-5, o3...) y pide `max_completion_tokens`; las demas empresas siguen
+    con `max_tokens`. En los modelos que "razonan", ese tope incluye lo que
+    piensan antes de contestar: por eso con OpenAI es mas holgado."""
+
     def __init__(
         self,
         llave: str,
         modelo: str,
         url: str,
         cliente: httpx.AsyncClient | None = None,
+        campo_tokens: str = "max_tokens",
+        tokens: int = MAX_TOKENS,
     ) -> None:
         self.llave, self.modelo, self.url, self.cliente = llave, modelo, url, cliente
+        self.campo_tokens, self.tokens = campo_tokens, tokens
 
     @staticmethod
     def mensajes(sistema: str, turnos: list[Turno]) -> list[dict]:
@@ -275,7 +285,7 @@ class CompatibleConOpenAI:
     ) -> Respuesta:
         cuerpo = {
             "model": self.modelo,
-            "max_tokens": MAX_TOKENS,
+            self.campo_tokens: self.tokens,
             "messages": self.mensajes(sistema, turnos),
             "tools": [
                 {
@@ -323,4 +333,12 @@ def proveedor_por_configuracion() -> ProveedorIA:
             settings.IA_URL or "https://api.anthropic.com/v1",
         )
     url = settings.IA_URL or DIRECCIONES[p]
+    if p == "openai":
+        return CompatibleConOpenAI(
+            settings.IA_LLAVE,
+            settings.IA_MODELO,
+            url,
+            campo_tokens="max_completion_tokens",
+            tokens=MAX_TOKENS_OPENAI,
+        )
     return CompatibleConOpenAI(settings.IA_LLAVE, settings.IA_MODELO, url)
